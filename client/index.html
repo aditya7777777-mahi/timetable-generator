@@ -36,6 +36,8 @@
             position: relative;
             transform: translateY(20px);
             transition: transform 0.3s ease-in-out;
+            max-height: 80vh; /* Limit the maximum height of the modal content */
+            overflow-y: auto; /* Enable vertical scrolling when content overflows */
         }
 
         .modal-container.active .modal-content {
@@ -87,6 +89,26 @@
             padding: 0;
             font-size: 1rem;
         }
+
+        /* Add styles for department selection */
+        .department-card {
+            background-color: white;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 1rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .department-card:hover {
+            border-color: #6b7280;
+            transform: translateY(-2px);
+        }
+
+        .department-card.selected {
+            border-color: #4f46e5;
+            background-color: #eef2ff;
+        }
     </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
@@ -96,9 +118,9 @@
         
         <!-- Main Page Buttons -->
         <div class="space-y-4 max-w-md mx-auto">
-            <button onclick="openModal('subjectFormContainer')" 
+            <button onclick="openModal('departmentSelectionModal')" 
                     class="w-full bg-gray-900 text-white py-3 px-6 rounded-lg hover:bg-gray-800 transition-colors flex items-center justify-center space-x-2">
-                <span>Add Subjects</span>
+                <span>Generate Timetable</span>
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                     <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" />
                 </svg>
@@ -109,6 +131,24 @@
                 <div id="mainSubjectList" class="space-y-2">
                     <!-- Subjects will be listed here -->
                 </div>
+            </div>
+        </div>
+
+        <!-- Department Selection Modal -->
+        <div id="departmentSelectionModal" class="modal-container">
+            <div class="modal-content bg-white p-6 rounded-lg shadow-md">
+                <button class="modal-close-button" onclick="closeModal('departmentSelectionModal')">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+                    </svg>
+                </button>
+                <h2 class="text-xl font-semibold text-gray-800 mb-6">Select Department</h2>
+                <div id="departmentList" class="space-y-4">
+                    <!-- Departments will be listed here -->
+                </div>
+                <button id="selectDepartmentButton" class="w-full bg-gray-900 text-white py-2 px-4 rounded-md hover:bg-gray-800 transition-colors mt-4">
+                    Next
+                </button>
             </div>
         </div>
 
@@ -208,6 +248,23 @@
                         <!-- Teachers will be added here dynamically -->
                     </ul>
                 </div>
+                <!-- Add Generate Timetable button -->
+                <div class="mt-6">
+                    <button id="generateTimetableBtn" 
+                            class="w-full bg-green-600 text-white py-3 px-6 rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center space-x-2">
+                        <span>Generate Timetable</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Add this new modal after the teacher form modal -->
+        <!-- Loading Modal -->
+        <div id="loadingModal" class="modal-container">
+            <div class="modal-content bg-white p-8 rounded-lg shadow-md text-center">
+                <div class="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-gray-900 mx-auto mb-4"></div>
+                <h2 class="text-xl font-semibold text-gray-800 mb-2">Generating Timetable</h2>
+                <p class="text-gray-600">Please wait a few minutes while we generate your timetable...</p>
             </div>
         </div>
     </div>
@@ -327,9 +384,8 @@
             subjects.push(subject);
             saveData('subjects', subjects);
             
-            // Clear form
+            // Clear form, but keep department name
             document.getElementById('subjectName').value = '';
-            document.getElementById('departmentName').value = '';
             document.getElementById('batchName').value = '';
             
             displaySubjects();
@@ -343,9 +399,14 @@
                 return;
             }
 
+            const selectedDepartmentName = document.getElementById('departmentName').value;
+
             closeModal('subjectFormContainer');
             setTimeout(() => {
                 openModal('teacherFormContainer');
+                
+                // Set the department name in teacher form
+                document.getElementById('teacherDepartmentName').value = selectedDepartmentName;
                 
                 // Update teacher subjects dropdown with added subjects
                 const teacherSubjects = document.getElementById('teacherSubjects');
@@ -423,7 +484,7 @@
             const collegeID = document.getElementById('collegeID').value;
 
             const teacher = {
-                teacherDepartmentName: teacherDepartmentName,
+                departmentName: teacherDepartmentName,  // Changed from teacherDepartmentName to departmentName
                 teacherName: teacherName,
                 collegeID: collegeID,
                 teacherSubjects: selectedSubjectsList
@@ -433,11 +494,75 @@
             teachers.push(teacher);
             saveData('teachers', teachers);
             
-            // Clear form
-            this.reset();
+            // Clear form except department name
+            document.getElementById('teacherName').value = '';
+            document.getElementById('collegeID').value = '';
             selectedSubjectsList = [];
             updateSelectedSubjects();
             displayTeachers();
+        });
+
+        // Function to display departments
+        function displayDepartments() {
+            const departments = getData('departments');
+            const departmentList = document.getElementById('departmentList');
+            departmentList.innerHTML = ''; // Clear existing list
+
+            departments.forEach((department, index) => {
+                const card = document.createElement('div');
+                card.className = 'department-card';
+                card.innerHTML = `
+                    <div class="font-medium">${department}</div>
+                `;
+                card.addEventListener('click', function() {
+                    document.querySelectorAll('.department-card').forEach(card => card.classList.remove('selected'));
+                    card.classList.add('selected');
+                    selectedDepartment = department;
+                });
+                departmentList.appendChild(card);
+            });
+        }
+
+        // Initial display of departments
+        displayDepartments();
+
+        // Department selection button handler
+        document.getElementById('selectDepartmentButton').addEventListener('click', function() {
+            if (!selectedDepartment) {
+                alert('Please select a department before proceeding.');
+                return;
+            }
+
+            closeModal('departmentSelectionModal');
+            setTimeout(() => {
+                openModal('subjectFormContainer');
+                // Set the department name in the subject form
+                document.getElementById('departmentName').value = selectedDepartment;
+            }, 300);
+        });
+
+        // Add departments to local storage for demonstration
+        const departments = ['Artificial Intelligence & Data Science', 'Computer Engineering', 'Electrical Engineering', 'Mechanical Engineering'];
+        saveData('departments', departments);
+
+        // Generate timetable button handler
+        document.getElementById('generateTimetableBtn').addEventListener('click', function() {
+            const teachers = getData('teachers');
+            if (teachers.length === 0) {
+                alert('Please add at least one teacher before generating timetable.');
+                return;
+            }
+
+            // Show loading modal
+            openModal('loadingModal');
+
+            // Simulate timetable generation (replace with actual generation logic)
+            setTimeout(() => {
+                closeModal('loadingModal');
+                closeModal('teacherFormContainer');
+                alert('Timetable generated successfully!');
+                // Add your timetable generation and PDF download logic here
+            }, 3000);
         });
     </script>
 </body>
