@@ -1,0 +1,146 @@
+/* Custom styles for Timetable Generator Application */
+
+/* Smooth transitions for section changes */
+.section {
+    transition: opacity 0.3s ease-in-out;
+}
+
+/* Custom scrollbar for timetable display */
+#current-timetable {
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+#current-timetable::-webkit-scrollbar {
+    width: 8px;
+}
+
+#current-timetable::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+#current-timetable::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+}
+
+#current-timetable::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+/* Form input focus styles */
+input:focus, select:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+/* Status message animations */
+#generate-status {
+    transition: all 0.3s ease-in-out;
+}
+
+/* Timetable cell hover effect */
+table td:not(:first-child):hover {
+    background-color: #f8fafc;
+}
+
+/* Responsive adjustments for smaller screens */
+@media (max-width: 768px) {
+    .container {
+        padding: 8px;
+    }
+    
+    .flex {
+        flex-direction: column;
+    }
+    
+    .w-1/4, .w-3/4 {
+        width: 100%;
+    }
+    
+    .w-1/4 {
+        margin-bottom: 1rem;
+        margin-right: 0;
+    }
+
+    .shadow-md {
+        margin-bottom: 16px;
+    }
+    
+    table {
+        display: block;
+        overflow-x: auto;
+        white-space: nowrap;
+    }
+}
+
+/* Loading animation */
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+#loading-indicator {
+  z-index: 100;
+}
+
+#loading-indicator::before {
+  content: '';
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  margin-right: 8px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  border-top-color: transparent;
+  animation: spin 0.8s linear infinite;
+}
+
+/* Toast animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeOut {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-20px); }
+}
+
+.toast {
+  animation: fadeIn 0.3s ease-out, fadeOut 0.3s ease-in forwards 2.7s;
+}
+
+/* Additional styling for timetable cells */
+#current-timetable td {
+  min-width: 150px;
+  vertical-align: top;
+  transition: background-color 0.2s;
+}
+
+#current-timetable td:not(:first-child):hover {
+  background-color: #f0f9ff;
+}
+
+/* Make form labels more visible */
+.text-gray-700 {
+  font-weight: 500;
+}
+
+/* Add better spacing for lists */
+.border-b {
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+}
+
+/* Style for the timetable navigation */
+.nav-btn {
+  transition: all 0.2s;
+}
+
+/* Additional styling for the header */
+header h1, header h2, header h3 {
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}

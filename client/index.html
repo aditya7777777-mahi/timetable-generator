@@ -1,569 +1,287 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
-    <title>Timetable Generator</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Timetable Generator - Terna Engineering College</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="index.css">
     <style>
-        .modal-container {
-            display: none;
-            justify-content: center;
-            align-items: center;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.5);
-            z-index: 50;
-            opacity: 0;
-            transition: opacity 0.3s ease-in-out;
+        .timetable-cell {
+            min-height: 80px;
+            font-size: 0.8rem;
+            white-space: pre-line;
         }
-
-        .modal-container.active {
-            display: flex;
-            opacity: 1;
-        }
-
-        .modal-content {
-            background-color: white;
-            padding: 24px;
-            border-radius: 12px;
-            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-            width: 90%;
-            max-width: 600px;
-            position: relative;
-            transform: translateY(20px);
-            transition: transform 0.3s ease-in-out;
-            max-height: 80vh; /* Limit the maximum height of the modal content */
-            overflow-y: auto; /* Enable vertical scrolling when content overflows */
-        }
-
-        .modal-container.active .modal-content {
-            transform: translateY(0);
-        }
-
-        .modal-close-button {
-            position: absolute;
-            top: 16px;
-            right: 16px;
-            background-color: rgba(0, 0, 0, 0.1);
-            color: #374151;
-            border: none;
-            padding: 8px 12px;
-            border-radius: 6px;
-            cursor: pointer;
-            font-weight: 500;
-            transition: all 0.2s;
-        }
-
-        .modal-close-button:hover {
-            background-color: rgba(0, 0, 0, 0.2);
-        }
-
-        /* Add new styles for subject selection */
-        .selected-subjects {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.5rem;
-            margin-top: 0.5rem;
-        }
-
-        .subject-tag {
+        .break-cell {
             background-color: #f3f4f6;
-            padding: 0.25rem 0.75rem;
-            border-radius: 9999px;
-            font-size: 0.875rem;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
-        .subject-tag button {
-            color: #ef4444;
-            font-weight: bold;
-            border: none;
-            background: none;
-            cursor: pointer;
-            padding: 0;
-            font-size: 1rem;
-        }
-
-        /* Add styles for department selection */
-        .department-card {
-            background-color: white;
-            border: 2px solid #e5e7eb;
-            border-radius: 8px;
-            padding: 1rem;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .department-card:hover {
-            border-color: #6b7280;
-            transform: translateY(-2px);
-        }
-
-        .department-card.selected {
-            border-color: #4f46e5;
-            background-color: #eef2ff;
+            font-style: italic;
+            text-align: center;
         }
     </style>
 </head>
-<body class="bg-gray-50 min-h-screen">
-    <!-- Main Content -->
+<body class="bg-gray-100">
     <div class="container mx-auto px-4 py-8">
-        <h1 class="text-3xl font-bold text-gray-900 mb-8">Timetable Generator</h1>
-        
-        <!-- Main Page Buttons -->
-        <div class="space-y-4 max-w-md mx-auto">
-            <button onclick="openModal('departmentSelectionModal')" 
-                    class="w-full bg-gray-900 text-white py-3 px-6 rounded-lg hover:bg-gray-800 transition-colors flex items-center justify-center space-x-2">
-                <span>Generate Timetable</span>
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                    <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" />
-                </svg>
-            </button>
-            
-            <div class="bg-white rounded-lg p-6 shadow-md">
-                <h2 class="text-lg font-semibold text-gray-800 mb-4">Added Subjects</h2>
-                <div id="mainSubjectList" class="space-y-2">
-                    <!-- Subjects will be listed here -->
-                </div>
-            </div>
-        </div>
+        <header class="mb-10 text-center">
+            <h1 class="text-3xl font-bold text-blue-800">TERNA ENGINEERING COLLEGE</h1>
+            <h2 class="text-xl text-blue-600">DEPARTMENT OF ARTIFICIAL INTELLIGENCE AND DATA SCIENCE</h2>
+            <h3 class="text-lg text-blue-500 mt-2">TIMETABLE GENERATOR</h3>
+        </header>
 
-        <!-- Department Selection Modal -->
-        <div id="departmentSelectionModal" class="modal-container">
-            <div class="modal-content bg-white p-6 rounded-lg shadow-md">
-                <button class="modal-close-button" onclick="closeModal('departmentSelectionModal')">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                        <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
-                    </svg>
-                </button>
-                <h2 class="text-xl font-semibold text-gray-800 mb-6">Select Department</h2>
-                <div id="departmentList" class="space-y-4">
-                    <!-- Departments will be listed here -->
-                </div>
-                <button id="selectDepartmentButton" class="w-full bg-gray-900 text-white py-2 px-4 rounded-md hover:bg-gray-800 transition-colors mt-4">
-                    Next
-                </button>
+        <div class="flex mb-8">
+            <!-- Sidebar for navigation -->
+            <div class="w-1/4 bg-white shadow-md rounded-lg p-4 mr-4">
+                <ul class="space-y-2">
+                    <li>
+                        <button id="nav-departments" class="nav-btn w-full py-2 px-4 bg-blue-500 text-white rounded">Departments</button>
+                    </li>
+                    <li>
+                        <button id="nav-teachers" class="nav-btn w-full py-2 px-4 bg-gray-200 hover:bg-gray-300 rounded">Teachers</button>
+                    </li>
+                    <li>
+                        <button id="nav-subjects" class="nav-btn w-full py-2 px-4 bg-gray-200 hover:bg-gray-300 rounded">Subjects</button>
+                    </li>
+                    <li>
+                        <button id="nav-rooms" class="nav-btn w-full py-2 px-4 bg-gray-200 hover:bg-gray-300 rounded">Rooms</button>
+                    </li>
+                    <li>
+                        <button id="nav-generate" class="nav-btn w-full py-2 px-4 bg-gray-200 hover:bg-gray-300 rounded">Generate Timetable</button>
+                    </li>
+                    <li>
+                        <button id="nav-view" class="nav-btn w-full py-2 px-4 bg-gray-200 hover:bg-gray-300 rounded">View Timetables</button>
+                    </li>
+                </ul>
             </div>
-        </div>
 
-        <!-- Subject Form Modal -->
-        <div id="subjectFormContainer" class="modal-container">
-            <div id="subjectForm" class="modal-content bg-white p-6 rounded-lg shadow-md mb-8">
-                <button class="modal-close-button" onclick="closeModal('subjectFormContainer')">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                        <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
-                    </svg>
-                </button>
-                <h2 class="text-xl font-semibold text-gray-800 mb-6">Add Subjects</h2>
-                <form id="addSubjectForm" class="space-y-4">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Subject Name</label>
-                        <input type="text" id="subjectName" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-400">
+            <!-- Main content area -->
+            <div class="w-3/4 bg-white shadow-md rounded-lg p-6">
+                <!-- Departments Form -->
+                <div id="departments-section" class="section">
+                    <h2 class="text-2xl font-semibold mb-4">Departments</h2>
+                    <form id="department-form" class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Department Name</label>
+                            <input type="text" id="department-name" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Academic Year</label>
+                            <input type="text" id="academic-year" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2" placeholder="e.g., FH 2025">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Number of Branches</label>
+                            <input type="number" id="num-branches" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2" min="1" max="3" value="1">
+                        </div>
+                        <button type="submit" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">Add Department</button>
+                    </form>
+                    <div class="mt-6">
+                        <h3 class="font-semibold mb-2">Departments List</h3>
+                        <div id="departments-list" class="border rounded-md p-4 min-h-[200px]">
+                            <!-- Departments will be listed here -->
+                            <div class="text-gray-500 italic">No departments added yet</div>
+                        </div>
                     </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Department Name</label>
-                        <input type="text" id="departmentName" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-400">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Batch</label>
-                        <select id="batchName" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-400">
-                            <option value="">Select Batch</option>
-                            <option value="SE">SE</option>
-                            <option value="TE">TE</option>
-                            <option value="BE">BE</option>
-                        </select>
-                    </div>
-                    <div class="flex space-x-2">
-                        <button type="submit" class="flex-1 bg-gray-900 text-white py-2 px-4 rounded-md hover:bg-gray-800 transition-colors">
-                            Add Subject
-                        </button>
-                        <button type="button" id="nextButton" class="bg-green-500 text-white py-2 px-4 rounded-md hover:bg-green-700 transition-colors">
-                            Next
-                        </button>
-                    </div>
-                </form>
-                
-                <!-- Display Added Subjects with counter -->
-                <div id="addedSubjects" class="mt-6">
-                    <div class="flex justify-between items-center mb-3">
-                        <h3 class="text-lg font-semibold text-gray-700">Added Subjects</h3>
-                        <span id="subjectCounter" class="bg-gray-200 px-3 py-1 rounded-full text-sm font-medium text-gray-700">0</span>
-                    </div>
-                    <ul id="subjectList" class="space-y-2">
-                        <!-- Subjects will be added here dynamically -->
-                    </ul>
                 </div>
-            </div>
-        </div>
 
-        <!-- Teacher Form Modal -->
-        <div id="teacherFormContainer" class="modal-container">
-            <div id="teacherForm" class="modal-content bg-white p-6 rounded-lg shadow-md">
-                <button class="modal-close-button" onclick="closeModal('teacherFormContainer')">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                        <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
-                    </svg>
-                </button>
-                <h2 class="text-xl font-semibold text-gray-800 mb-6">Add Teacher</h2>
-                <form id="addTeacherForm" class="space-y-4">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Department Name</label>
-                        <input type="text" id="teacherDepartmentName" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-400">
+                <!-- Teachers Form -->
+                <div id="teachers-section" class="section hidden">
+                    <h2 class="text-2xl font-semibold mb-4">Teachers</h2>
+                    <form id="teacher-form" class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Teacher Code</label>
+                            <input type="text" id="teacher-code" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2" placeholder="e.g., SBR">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Teacher Name</label>
+                            <input type="text" id="teacher-name" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2" placeholder="e.g., Dr. Sandeep B. Raskar">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Specialization</label>
+                            <input type="text" id="teacher-specialization" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2" placeholder="e.g., Machine Learning">
+                        </div>
+                        <button type="submit" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">Add Teacher</button>
+                    </form>
+                    <div class="mt-6">
+                        <h3 class="font-semibold mb-2">Teachers List</h3>
+                        <div id="teachers-list" class="border rounded-md p-4 min-h-[200px]">
+                            <!-- Teachers will be listed here -->
+                            <div class="text-gray-500 italic">No teachers added yet</div>
+                        </div>
                     </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Teacher Name</label>
-                        <input type="text" id="teacherName" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-400">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">College ID</label>
-                        <input type="text" id="collegeID" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-400">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Select Subjects</label>
-                        <div class="relative">
-                            <select id="teacherSubjects" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-400">
-                                <option value="">Choose subjects...</option>
+                </div>
+
+                <!-- Subjects Form -->
+                <div id="subjects-section" class="section hidden">
+                    <h2 class="text-2xl font-semibold mb-4">Subjects</h2>
+                    <form id="subject-form" class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Subject Code</label>
+                            <input type="text" id="subject-code" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2" placeholder="e.g., ML">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Subject Name</label>
+                            <input type="text" id="subject-name" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2" placeholder="e.g., Machine Learning">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Department</label>
+                            <select id="subject-department" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2">
+                                <option value="">Select Department</option>
+                                <!-- Departments will be populated here -->
                             </select>
                         </div>
-                        <div id="selectedSubjects" class="selected-subjects">
-                            <!-- Selected subjects will appear here as tags -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Type</label>
+                            <select id="subject-type" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2">
+                                <option value="lecture">Lecture</option>
+                                <option value="practical">Practical</option>
+                            </select>
                         </div>
-                        <p class="text-sm text-gray-500 mt-1">Click to select a subject</p>
+                        <button type="submit" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">Add Subject</button>
+                    </form>
+                    <div class="mt-6">
+                        <h3 class="font-semibold mb-2">Subjects List</h3>
+                        <div id="subjects-list" class="border rounded-md p-4 min-h-[200px]">
+                            <!-- Subjects will be listed here -->
+                            <div class="text-gray-500 italic">No subjects added yet</div>
+                        </div>
                     </div>
-                    <button type="submit" class="w-full bg-gray-900 text-white py-2 px-4 rounded-md hover:bg-gray-800 transition-colors">
-                        Add Teacher
-                    </button>
-                </form>
-                
-                <!-- Display Added Teachers -->
-                <div id="addedTeachers" class="mt-6">
-                    <h3 class="text-lg font-semibold text-gray-700 mb-3">Added Teachers</h3>
-                    <ul id="teacherList" class="space-y-2">
-                        <!-- Teachers will be added here dynamically -->
-                    </ul>
                 </div>
-                <!-- Add Generate Timetable button -->
-                <div class="mt-6">
-                    <button id="generateTimetableBtn" 
-                            class="w-full bg-green-600 text-white py-3 px-6 rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center space-x-2">
-                        <span>Generate Timetable</span>
-                    </button>
-                </div>
-            </div>
-        </div>
 
-        <!-- Add this new modal after the teacher form modal -->
-        <!-- Loading Modal -->
-        <div id="loadingModal" class="modal-container">
-            <div class="modal-content bg-white p-8 rounded-lg shadow-md text-center">
-                <div class="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-gray-900 mx-auto mb-4"></div>
-                <h2 class="text-xl font-semibold text-gray-800 mb-2">Generating Timetable</h2>
-                <p class="text-gray-600">Please wait a few minutes while we generate your timetable...</p>
+                <!-- Rooms Form -->
+                <div id="rooms-section" class="section hidden">
+                    <h2 class="text-2xl font-semibold mb-4">Rooms</h2>
+                    <form id="room-form" class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Room Number</label>
+                            <input type="text" id="room-number" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2" placeholder="e.g., 125">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Capacity</label>
+                            <input type="number" id="room-capacity" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2" placeholder="e.g., 60">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Type</label>
+                            <select id="room-type" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2">
+                                <option value="classroom">Classroom</option>
+                                <option value="lab">Laboratory</option>
+                            </select>
+                        </div>
+                        <button type="submit" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">Add Room</button>
+                    </form>
+                    <div class="mt-6">
+                        <h3 class="font-semibold mb-2">Rooms List</h3>
+                        <div id="rooms-list" class="border rounded-md p-4 min-h-[200px]">
+                            <!-- Rooms will be listed here -->
+                            <div class="text-gray-500 italic">No rooms added yet</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Generate Timetable Form -->
+                <div id="generate-section" class="section hidden">
+                    <h2 class="text-2xl font-semibold mb-4">Generate Timetable</h2>
+                    <form id="generate-form" class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Department</label>
+                            <select id="timetable-department" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2">
+                                <option value="">Select Department</option>
+                                <!-- Departments will be populated here -->
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Academic Year</label>
+                            <input type="text" id="timetable-academic-year" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2" placeholder="e.g., FH 2025">
+                        </div>
+                        <button type="submit" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">Generate Timetable</button>
+                    </form>
+                    <div id="generation-status" class="mt-4 p-4 bg-yellow-100 border border-yellow-400 text-yellow-700 rounded hidden">
+                        Generating timetable, please wait...
+                    </div>
+                    <div id="generation-success" class="mt-4 p-4 bg-green-100 border border-green-400 text-green-700 rounded hidden">
+                        Timetable generated successfully!
+                    </div>
+                    <div id="generation-error" class="mt-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded hidden">
+                        Failed to generate timetable. Please try again.
+                    </div>
+                </div>
+
+                <!-- View Timetables Section -->
+                <div id="view-section" class="section hidden">
+                    <h2 class="text-2xl font-semibold mb-4">View Timetables</h2>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Select Timetable</label>
+                        <select id="timetable-select" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2">
+                            <option value="">Select a Timetable</option>
+                            <!-- Timetables will be populated here -->
+                        </select>
+                    </div>
+                    
+                    <div class="mt-6">
+                        <h3 class="font-semibold mb-2">Generated Timetables</h3>
+                        <div id="timetables-list" class="border rounded-md p-4 min-h-[200px]">
+                            <!-- Timetables will be listed here -->
+                            <div class="text-gray-500 italic">No timetables generated yet</div>
+                        </div>
+                    </div>
+                    
+                    <div class="mt-6">
+                        <!-- Timetable display tabs -->
+                        <div class="border-b border-gray-200 mb-4">
+                            <ul id="timetable-tabs" class="flex flex-wrap -mb-px">
+                                <li class="mr-2">
+                                    <button id="tab-class" class="inline-block p-4 border-b-2 border-transparent rounded-t-lg hover:text-gray-600 hover:border-gray-300 active-tab">Class Timetable</button>
+                                </li>
+                                <li class="mr-2">
+                                    <button id="tab-b1" class="inline-block p-4 border-b-2 border-transparent rounded-t-lg hover:text-gray-600 hover:border-gray-300">Batch B1</button>
+                                </li>
+                                <li class="mr-2">
+                                    <button id="tab-b2" class="inline-block p-4 border-b-2 border-transparent rounded-t-lg hover:text-gray-600 hover:border-gray-300">Batch B2</button>
+                                </li>
+                                <li class="mr-2">
+                                    <button id="tab-b3" class="inline-block p-4 border-b-2 border-transparent rounded-t-lg hover:text-gray-600 hover:border-gray-300">Batch B3</button>
+                                </li>
+                            </ul>
+                        </div>
+                        
+                        <!-- Timetable display area for Class -->
+                        <div id="timetable-class" class="timetable-content">
+                            <h3 class="text-xl font-semibold mb-2">Class Timetable</h3>
+                            <div id="timetable-display-class" class="overflow-x-auto">
+                                <!-- Timetable will be displayed here -->
+                                <div class="text-gray-500 italic">No timetable selected</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Timetable display area for Batch B1 -->
+                        <div id="timetable-b1" class="timetable-content hidden">
+                            <h3 class="text-xl font-semibold mb-2">Batch B1 Timetable</h3>
+                            <div id="timetable-display-b1" class="overflow-x-auto">
+                                <!-- Timetable will be displayed here -->
+                                <div class="text-gray-500 italic">No timetable selected</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Timetable display area for Batch B2 -->
+                        <div id="timetable-b2" class="timetable-content hidden">
+                            <h3 class="text-xl font-semibold mb-2">Batch B2 Timetable</h3>
+                            <div id="timetable-display-b2" class="overflow-x-auto">
+                                <!-- Timetable will be displayed here -->
+                                <div class="text-gray-500 italic">No timetable selected</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Timetable display area for Batch B3 -->
+                        <div id="timetable-b3" class="timetable-content hidden">
+                            <h3 class="text-xl font-semibold mb-2">Batch B3 Timetable</h3>
+                            <div id="timetable-display-b3" class="overflow-x-auto">
+                                <!-- Timetable will be displayed here -->
+                                <div class="text-gray-500 italic">No timetable selected</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 
-    <script>
-        // Function to open a modal
-        function openModal(modalId) {
-            const modal = document.getElementById(modalId);
-            document.body.style.overflow = 'hidden'; // Prevent background scrolling
-            modal.classList.add('active');
-        }
-
-        // Function to close a modal
-        function closeModal(modalId) {
-            const modal = document.getElementById(modalId);
-            document.body.style.overflow = ''; // Restore scrolling
-            modal.classList.remove('active');
-        }
-        // Function to get data from local storage
-        function getData(key) {
-            const data = localStorage.getItem(key);
-            return data ? JSON.parse(data) : [];
-        }
-
-        // Function to save data to local storage
-        function saveData(key, data) {
-            localStorage.setItem(key, JSON.stringify(data));
-        }
-
-        // Function to update subject counter
-        function updateSubjectCounter() {
-            const subjects = getData('subjects');
-            document.getElementById('subjectCounter').textContent = subjects.length;
-        }
-
-        // Function to display subjects
-        function displaySubjects() {
-            const subjects = getData('subjects');
-            const subjectList = document.getElementById('subjectList');
-            subjectList.innerHTML = ''; // Clear existing list
-
-            subjects.forEach((subject, index) => {
-                const listItem = document.createElement('li');
-                listItem.className = 'flex items-center justify-between py-2 px-4 bg-gray-100 rounded-md';
-                listItem.innerHTML = `
-                    <div>
-                        <span class="font-medium">${subject.subjectName}</span>
-                        <span class="text-sm text-gray-600 ml-2">(${subject.departmentName} - ${subject.batchName})</span>
-                    </div>
-                    <button onclick="removeSubject(${index})" class="bg-red-500 text-white py-1 px-3 rounded-md hover:bg-red-700 transition-colors">
-                        Remove
-                    </button>
-                `;
-                subjectList.appendChild(listItem);
-            });
-            updateSubjectCounter();
-            updateMainSubjectList();
-        }
-
-        // Function to remove a subject
-        function removeSubject(index) {
-            let subjects = getData('subjects');
-            subjects.splice(index, 1);
-            saveData('subjects', subjects);
-            displaySubjects();
-        }
-
-        // Function to display teachers
-        function displayTeachers() {
-            const teachers = getData('teachers');
-            const teacherList = document.getElementById('teacherList');
-            teacherList.innerHTML = ''; // Clear existing list
-
-            teachers.forEach((teacher, index) => {
-                const listItem = document.createElement('li');
-                listItem.className = 'flex items-center justify-between py-2 px-4 bg-gray-100 rounded-md';
-                listItem.innerHTML = `
-                    <div>
-                        <div class="font-medium">${teacher.teacherName} (${teacher.departmentName})</div>
-                        <div class="text-sm text-gray-600">Subjects: ${teacher.teacherSubjects.join(', ')}</div>
-                    </div>
-                    <button onclick="removeTeacher(${index})" class="bg-red-500 text-white py-1 px-3 rounded-md hover:bg-red-700 transition-colors">
-                        Remove
-                    </button>
-                `;
-                teacherList.appendChild(listItem);
-            });
-        }
-
-        // Function to remove a teacher
-        function removeTeacher(index) {
-            let teachers = getData('teachers');
-            teachers.splice(index, 1);
-            saveData('teachers', teachers);
-            displayTeachers();
-        }
-
-        // Initial display of subjects and teachers
-        displaySubjects();
-        displayTeachers();
-
-        // Subject form submission
-        document.getElementById('addSubjectForm').addEventListener('submit', function(e) {
-            e.preventDefault();
-            
-            const subjectName = document.getElementById('subjectName').value;
-            const departmentName = document.getElementById('departmentName').value;
-            const batchName = document.getElementById('batchName').value;
-
-            const subject = {
-                subjectName: subjectName,
-                departmentName: departmentName,
-                batchName: batchName
-            };
-
-            let subjects = getData('subjects');
-            subjects.push(subject);
-            saveData('subjects', subjects);
-            
-            // Clear form, but keep department name
-            document.getElementById('subjectName').value = '';
-            document.getElementById('batchName').value = '';
-            
-            displaySubjects();
-        });
-
-        // Next button handler
-        document.getElementById('nextButton').addEventListener('click', function() {
-            const subjects = getData('subjects');
-            if (subjects.length === 0) {
-                alert('Please add at least one subject before proceeding.');
-                return;
-            }
-
-            const selectedDepartmentName = document.getElementById('departmentName').value;
-
-            closeModal('subjectFormContainer');
-            setTimeout(() => {
-                openModal('teacherFormContainer');
-                
-                // Set the department name in teacher form
-                document.getElementById('teacherDepartmentName').value = selectedDepartmentName;
-                
-                // Update teacher subjects dropdown with added subjects
-                const teacherSubjects = document.getElementById('teacherSubjects');
-                teacherSubjects.innerHTML = '<option value="">Choose subjects...</option>';
-                subjects.forEach(subject => {
-                    const option = document.createElement('option');
-                    option.value = subject.subjectName;
-                    option.textContent = `${subject.subjectName} (${subject.batchName})`;
-                    teacherSubjects.appendChild(option);
-                });
-
-                // Reset selected subjects
-                selectedSubjectsList = [];
-                updateSelectedSubjects();
-            }, 300);
-        });
-
-        // Function to update main page subject list
-        function updateMainSubjectList() {
-            const subjects = getData('subjects');
-            const mainList = document.getElementById('mainSubjectList');
-            
-            if (subjects.length === 0) {
-                mainList.innerHTML = '<p class="text-gray-500 text-center">No subjects added yet</p>';
-                return;
-            }
-
-            mainList.innerHTML = subjects.map(subject => `
-                <div class="flex items-center justify-between py-2 px-4 bg-gray-50 rounded-md">
-                    <div>
-                        <span class="font-medium">${subject.subjectName}</span>
-                        <span class="text-sm text-gray-600 ml-2">(${subject.batchName})</span>
-                    </div>
-                </div>
-            `).join('');
-        }
-
-        // Initial display
-        updateMainSubjectList();
-
-        // Add new functions for subject selection
-        let selectedSubjectsList = [];
-
-        function updateSelectedSubjects() {
-            const container = document.getElementById('selectedSubjects');
-            container.innerHTML = selectedSubjectsList.map(subject => `
-                <div class="subject-tag">
-                    <span>${subject}</span>
-                    <button type="button" onclick="removeSelectedSubject('${subject}')">&times;</button>
-                </div>
-            `).join('');
-        }
-
-        function removeSelectedSubject(subject) {
-            selectedSubjectsList = selectedSubjectsList.filter(s => s !== subject);
-            updateSelectedSubjects();
-        }
-
-        // Modify the teacher form submission
-        document.getElementById('teacherSubjects').addEventListener('change', function(e) {
-            const selectedSubject = e.target.value;
-            if (selectedSubject && !selectedSubjectsList.includes(selectedSubject)) {
-                selectedSubjectsList.push(selectedSubject);
-                updateSelectedSubjects();
-                e.target.value = ''; // Reset select
-            }
-        });
-
-        // Update teacher form submission to include selected subjects
-        document.getElementById('addTeacherForm').addEventListener('submit', function(e) {
-            e.preventDefault();
-
-            const teacherDepartmentName = document.getElementById('teacherDepartmentName').value;
-            const teacherName = document.getElementById('teacherName').value;
-            const collegeID = document.getElementById('collegeID').value;
-
-            const teacher = {
-                departmentName: teacherDepartmentName,  // Changed from teacherDepartmentName to departmentName
-                teacherName: teacherName,
-                collegeID: collegeID,
-                teacherSubjects: selectedSubjectsList
-            };
-
-            let teachers = getData('teachers');
-            teachers.push(teacher);
-            saveData('teachers', teachers);
-            
-            // Clear form except department name
-            document.getElementById('teacherName').value = '';
-            document.getElementById('collegeID').value = '';
-            selectedSubjectsList = [];
-            updateSelectedSubjects();
-            displayTeachers();
-        });
-
-        // Function to display departments
-        function displayDepartments() {
-            const departments = getData('departments');
-            const departmentList = document.getElementById('departmentList');
-            departmentList.innerHTML = ''; // Clear existing list
-
-            departments.forEach((department, index) => {
-                const card = document.createElement('div');
-                card.className = 'department-card';
-                card.innerHTML = `
-                    <div class="font-medium">${department}</div>
-                `;
-                card.addEventListener('click', function() {
-                    document.querySelectorAll('.department-card').forEach(card => card.classList.remove('selected'));
-                    card.classList.add('selected');
-                    selectedDepartment = department;
-                });
-                departmentList.appendChild(card);
-            });
-        }
-
-        // Initial display of departments
-        displayDepartments();
-
-        // Department selection button handler
-        document.getElementById('selectDepartmentButton').addEventListener('click', function() {
-            if (!selectedDepartment) {
-                alert('Please select a department before proceeding.');
-                return;
-            }
-
-            closeModal('departmentSelectionModal');
-            setTimeout(() => {
-                openModal('subjectFormContainer');
-                // Set the department name in the subject form
-                document.getElementById('departmentName').value = selectedDepartment;
-            }, 300);
-        });
-
-        // Add departments to local storage for demonstration
-        const departments = ['Artificial Intelligence & Data Science', 'Computer Engineering', 'Electrical Engineering', 'Mechanical Engineering'];
-        saveData('departments', departments);
-
-        // Generate timetable button handler
-        document.getElementById('generateTimetableBtn').addEventListener('click', function() {
-            const teachers = getData('teachers');
-            if (teachers.length === 0) {
-                alert('Please add at least one teacher before generating timetable.');
-                return;
-            }
-
-            // Show loading modal
-            openModal('loadingModal');
-
-            // Simulate timetable generation (replace with actual generation logic)
-            setTimeout(() => {
-                closeModal('loadingModal');
-                closeModal('teacherFormContainer');
-                alert('Timetable generated successfully!');
-                // Add your timetable generation and PDF download logic here
-            }, 3000);
-        });
-    </script>
+    <script src="index.js"></script>
 </body>
 </html>
