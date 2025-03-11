@@ -17,6 +17,22 @@
             font-style: italic;
             text-align: center;
         }
+        /* Style for the year tabs */
+        .year-tab {
+            border-bottom-width: 2px;
+        }
+        .year-tab.active {
+            color: #2563eb;
+            border-color: #2563eb;
+        }
+        .year-tab:not(.active) {
+            border-color: transparent;
+            color: #6b7280;
+        }
+        .year-tab:not(.active):hover {
+            color: #4b5563;
+            border-color: #d1d5db;
+        }
     </style>
 </head>
 <body class="bg-gray-100">
@@ -48,6 +64,9 @@
                     </li>
                     <li>
                         <button id="nav-view" class="nav-btn w-full py-2 px-4 bg-gray-200 hover:bg-gray-300 rounded">View Timetables</button>
+                    </li>
+                    <li>
+                        <button id="nav-import" class="nav-btn w-full py-2 px-4 bg-gray-200 hover:bg-gray-300 rounded">Import Timetable</button>
                     </li>
                 </ul>
             </div>
@@ -125,6 +144,15 @@
                             <select id="subject-department" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2">
                                 <option value="">Select Department</option>
                                 <!-- Departments will be populated here -->
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Year</label>
+                            <select id="subject-year" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2">
+                                <option value="">Select Year</option>
+                                <option value="SE">Second Year (SE)</option>
+                                <option value="TE">Third Year (TE)</option>
+                                <option value="BE">Final Year (BE)</option>
                             </select>
                         </div>
                         <div>
@@ -209,72 +237,106 @@
                     <div>
                         <label class="block text-sm font-medium text-gray-700">Select Timetable</label>
                         <select id="timetable-select" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2">
-                            <option value="">Select a Timetable</option>
-                            <!-- Timetables will be populated here -->
+                            <option value="">Select a timetable</option>
+                            <!-- Timetables will be listed here -->
                         </select>
                     </div>
                     
-                    <div class="mt-6">
-                        <h3 class="font-semibold mb-2">Generated Timetables</h3>
-                        <div id="timetables-list" class="border rounded-md p-4 min-h-[200px]">
-                            <!-- Timetables will be listed here -->
-                            <div class="text-gray-500 italic">No timetables generated yet</div>
+                    <div id="timetable-container" class="mt-8">
+                        <div id="timetable-header" class="mb-4 text-center hidden">
+                            <h1 id="college-name" class="text-2xl font-bold text-blue-800"></h1>
+                            <h2 id="department-name" class="text-xl text-blue-600"></h2>
+                            <h3 id="class-timetable" class="text-lg text-blue-500 mt-2">CLASS TIMETABLE</h3>
+                            <div class="flex justify-between mt-2">
+                                <p id="class-info" class="text-md"></p>
+                                <p id="academic-year" class="text-md"></p>
+                            </div>
+                        </div>
+                        
+                        <!-- Year tabs - visible and styled properly -->
+                        <div id="year-tabs-container" class="hidden mt-6 mb-4">
+                            <div class="border-b border-gray-200">
+                                <ul class="flex flex-wrap -mb-px" role="tablist">
+                                    <li class="mr-2" role="presentation">
+                                        <button id="se-year-tab" class="year-tab inline-block py-3 px-6 font-medium text-center border-b-2 rounded-t-lg" type="button" role="tab" data-year="SE">SE Year</button>
+                                    </li>
+                                    <li class="mr-2" role="presentation">
+                                        <button id="te-year-tab" class="year-tab inline-block py-3 px-6 font-medium text-center border-b-2 rounded-t-lg" type="button" role="tab" data-year="TE">TE Year</button>
+                                    </li>
+                                    <li role="presentation">
+                                        <button id="be-year-tab" class="year-tab inline-block py-3 px-6 font-medium text-center border-b-2 rounded-t-lg" type="button" role="tab" data-year="BE">BE Year</button>
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+                        
+                        <div id="timetable-view" class="overflow-x-auto">
+                            <!-- Timetable will be displayed here -->
+                        </div>
+                        
+                        <div id="faculty-subject-details" class="mt-8 hidden">
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <h3 class="font-semibold mb-2">Faculty Details</h3>
+                                    <table id="faculty-table" class="w-full border-collapse border">
+                                        <thead>
+                                            <tr>
+                                                <th class="border p-2">Code</th>
+                                                <th class="border p-2">Name</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <!-- Faculty details will be displayed here -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div>
+                                    <h3 class="font-semibold mb-2">Subject Details</h3>
+                                    <table id="subject-table" class="w-full border-collapse border">
+                                        <thead>
+                                            <tr>
+                                                <th class="border p-2">Code</th>
+                                                <th class="border p-2">Subject</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <!-- Subject details will be displayed here -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
                         </div>
                     </div>
+                </div>
+                
+                <!-- Import Timetable Section -->
+                <div id="import-section" class="section hidden">
+                    <h2 class="text-2xl font-semibold mb-4">Import Timetable</h2>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Department</label>
+                            <select id="import-department" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2">
+                                <option value="">Select Department</option>
+                                <!-- Departments will be populated here -->
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Academic Year</label>
+                            <input type="text" id="import-academic-year" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2" placeholder="e.g., SH 2025">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Timetable JSON Data</label>
+                            <textarea id="import-json" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2" rows="10" placeholder="Paste your timetable JSON here"></textarea>
+                        </div>
+                        <button id="import-timetable-btn" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">Import Timetable</button>
+                    </div>
                     
-                    <div class="mt-6">
-                        <!-- Timetable display tabs -->
-                        <div class="border-b border-gray-200 mb-4">
-                            <ul id="timetable-tabs" class="flex flex-wrap -mb-px">
-                                <li class="mr-2">
-                                    <button id="tab-class" class="inline-block p-4 border-b-2 border-transparent rounded-t-lg hover:text-gray-600 hover:border-gray-300 active-tab">Class Timetable</button>
-                                </li>
-                                <li class="mr-2">
-                                    <button id="tab-b1" class="inline-block p-4 border-b-2 border-transparent rounded-t-lg hover:text-gray-600 hover:border-gray-300">Batch B1</button>
-                                </li>
-                                <li class="mr-2">
-                                    <button id="tab-b2" class="inline-block p-4 border-b-2 border-transparent rounded-t-lg hover:text-gray-600 hover:border-gray-300">Batch B2</button>
-                                </li>
-                                <li class="mr-2">
-                                    <button id="tab-b3" class="inline-block p-4 border-b-2 border-transparent rounded-t-lg hover:text-gray-600 hover:border-gray-300">Batch B3</button>
-                                </li>
-                            </ul>
+                    <div id="import-result" class="mt-4 hidden">
+                        <div id="import-success" class="hidden p-4 bg-green-100 text-green-700 rounded">
+                            Timetable imported successfully!
                         </div>
-                        
-                        <!-- Timetable display area for Class -->
-                        <div id="timetable-class" class="timetable-content">
-                            <h3 class="text-xl font-semibold mb-2">Class Timetable</h3>
-                            <div id="timetable-display-class" class="overflow-x-auto">
-                                <!-- Timetable will be displayed here -->
-                                <div class="text-gray-500 italic">No timetable selected</div>
-                            </div>
-                        </div>
-                        
-                        <!-- Timetable display area for Batch B1 -->
-                        <div id="timetable-b1" class="timetable-content hidden">
-                            <h3 class="text-xl font-semibold mb-2">Batch B1 Timetable</h3>
-                            <div id="timetable-display-b1" class="overflow-x-auto">
-                                <!-- Timetable will be displayed here -->
-                                <div class="text-gray-500 italic">No timetable selected</div>
-                            </div>
-                        </div>
-                        
-                        <!-- Timetable display area for Batch B2 -->
-                        <div id="timetable-b2" class="timetable-content hidden">
-                            <h3 class="text-xl font-semibold mb-2">Batch B2 Timetable</h3>
-                            <div id="timetable-display-b2" class="overflow-x-auto">
-                                <!-- Timetable will be displayed here -->
-                                <div class="text-gray-500 italic">No timetable selected</div>
-                            </div>
-                        </div>
-                        
-                        <!-- Timetable display area for Batch B3 -->
-                        <div id="timetable-b3" class="timetable-content hidden">
-                            <h3 class="text-xl font-semibold mb-2">Batch B3 Timetable</h3>
-                            <div id="timetable-display-b3" class="overflow-x-auto">
-                                <!-- Timetable will be displayed here -->
-                                <div class="text-gray-500 italic">No timetable selected</div>
-                            </div>
+                        <div id="import-error" class="hidden p-4 bg-red-100 text-red-700 rounded">
+                            Error importing timetable.
                         </div>
                     </div>
                 </div>
@@ -282,6 +344,12 @@
         </div>
     </div>
 
-    <script src="index.js"></script>
+    <!-- Load JavaScript modules in correct order -->
+    <script src="js/api.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/forms.js"></script>
+    <script src="js/timetableRenderer.js"></script>
+    <script src="js/app.js"></script>
+    <script src="js/main.js"></script>
 </body>
 </html>

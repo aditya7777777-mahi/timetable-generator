@@ -1,72 +1,280 @@
-document.addEventListener('DOMContentLoaded', function() {
-    // Navigation handling
+document.addEventListener('DOMContentLoaded', initializeApp);
+
+function initializeApp() {
+    setupNavigation();
+    setupYearTabListeners();
+    setupFormListeners();
+    initViewSection();
+    initImportSection();
+    showSection('departments');
+}
+
+function setupNavigation() {
     const navButtons = document.querySelectorAll('.nav-btn');
     const sections = document.querySelectorAll('.section');
-    
+
     navButtons.forEach(button => {
         button.addEventListener('click', () => {
-            // Update active nav button styling
-            navButtons.forEach(btn => {
-                btn.classList.remove('bg-blue-500', 'text-white');
-                btn.classList.add('bg-gray-200', 'hover:bg-gray-300');
-            });
-            button.classList.remove('bg-gray-200', 'hover:bg-gray-300');
-            button.classList.add('bg-blue-500', 'text-white');
-            
-            // Show the corresponding section
-            const sectionId = button.id.replace('nav-', '') + '-section';
-            sections.forEach(section => {
-                section.classList.add('hidden');
-            });
-            document.getElementById(sectionId).classList.remove('hidden');
+            updateNavButtonStyles(navButtons, button);
+            showSection(button.id.replace('nav-', ''));
         });
     });
-    
-    // Load initial data
-    showLoadingState();
-    Promise.all([
-        fetchDepartments(),
-        fetchTeachers(),
-        fetchSubjects(),
-        fetchRooms(),
-        fetchTimetables()
-    ]).finally(() => {
-        hideLoadingState();
+}
+
+function updateNavButtonStyles(navButtons, activeButton) {
+    navButtons.forEach(btn => {
+        btn.classList.remove('bg-blue-500', 'text-white');
+        btn.classList.add('bg-gray-200', 'hover:bg-gray-300');
     });
-    
-    // Form submissions
+    activeButton.classList.remove('bg-gray-200', 'hover:bg-gray-300');
+    activeButton.classList.add('bg-blue-500', 'text-white');
+}
+
+function setupYearTabListeners() {
+    document.getElementById('se-year-tab').addEventListener('click', () => window.timetableRenderer.activateYearTab('SE'));
+    document.getElementById('te-year-tab').addEventListener('click', () => window.timetableRenderer.activateYearTab('TE'));
+    document.getElementById('be-year-tab').addEventListener('click', () => window.timetableRenderer.activateYearTab('BE'));
+}
+
+function setupFormListeners() {
     document.getElementById('department-form').addEventListener('submit', handleDepartmentSubmit);
     document.getElementById('teacher-form').addEventListener('submit', handleTeacherSubmit);
     document.getElementById('subject-form').addEventListener('submit', handleSubjectSubmit);
     document.getElementById('room-form').addEventListener('submit', handleRoomSubmit);
     document.getElementById('generate-form').addEventListener('submit', handleGenerateTimetable);
-    
-    // Filter timetables by department
+}
+
+function showSection(sectionId) {
+    const sections = document.querySelectorAll('.section');
+    sections.forEach(section => section.classList.add('hidden'));
+    document.getElementById(`${sectionId}-section`).classList.remove('hidden');
+    updateNavButtonStyles(document.querySelectorAll('.nav-btn'), document.getElementById(`nav-${sectionId}`));
+}
+
+function initViewSection() {
+    loadTimetables();
     document.getElementById('timetable-select').addEventListener('change', function() {
-        const selectedId = this.value;
-        if (selectedId) {
-            viewTimetable(selectedId);
+        if (this.value) {
+            fetchFormattedTimetable(this.value);
+        } else {
+            clearTimetableView();
         }
     });
+}
 
-    // Add timetable tab handlers
-    document.querySelectorAll('#timetable-tabs button').forEach(button => {
-        button.addEventListener('click', () => {
-            // Update active tab styling
-            document.querySelectorAll('#timetable-tabs button').forEach(btn => {
-                btn.classList.remove('text-blue-600', 'border-blue-600');
-                btn.classList.add('hover:text-gray-600', 'hover:border-gray-300');
-            });
-            button.classList.remove('hover:text-gray-600', 'hover:border-gray-300');
-            button.classList.add('text-blue-600', 'border-blue-600');
-            
-            // Show corresponding content
-            const tabType = button.id.replace('tab-', '');
-            document.querySelectorAll('.timetable-content').forEach(content => {
-                content.classList.add('hidden');
-            });
-            document.getElementById(`timetable-${tabType}`).classList.remove('hidden');
+function clearTimetableView() {
+    document.getElementById('timetable-view').innerHTML = '';
+    document.getElementById('timetable-header').classList.add('hidden');
+    document.getElementById('faculty-subject-details').classList.add('hidden');
+}
+
+// Load initial data
+showLoadingState();
+Promise.all([
+    fetchDepartments(),
+    fetchTeachers(),
+    fetchSubjects(),
+    fetchRooms(),
+    fetchTimetables()
+]).finally(() => {
+    hideLoadingState();
+});
+
+// Function to fetch and display formatted timetable
+function fetchFormattedTimetable(timetableId) {
+    fetch(`/api/timetables/${timetableId}/formatted`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Failed to fetch timetable');
+            }
+            return response.json();
+        })
+        .then(data => {
+            // Use timetableRenderer module to display the formatted timetable
+            window.timetableRenderer.displayFormattedTimetable(data.timetable, data.department);
+            // Update the app state
+            if (window.appCore) {
+                window.appCore.updateTimetable(data.timetable);
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching timetable:', error);
         });
+}
+
+// Load timetables in the view section
+function loadTimetables() {
+    fetch('/api/timetables')
+        .then(response => response.json())
+        .then(timetables => {
+            const timetableSelect = document.getElementById('timetable-select');
+            // Clear existing options except the first one
+            while (timetableSelect.options.length > 1) {
+                timetableSelect.remove(1);
+            }
+            
+            // Add timetables to select
+            timetables.forEach(timetable => {
+                const option = document.createElement('option');
+                option.value = timetable._id;
+                
+                // Get the department name if available
+                let deptName = 'Unknown Department';
+                if (window.globalDepartments && window.globalDepartments.length) {
+                    const dept = window.globalDepartments.find(d => d._id === timetable.department_id);
+                    if (dept) {
+                        deptName = dept.name;
+                    }
+                }
+                
+                option.textContent = `${deptName} - ${timetable.academic_year}`;
+                timetableSelect.appendChild(option);
+            });
+        })
+        .catch(error => {
+            console.error('Error loading timetables:', error);
+        });
+}
+
+// Function to initialize import section
+function initImportSection() {
+    loadDepartmentsForImport();
+    
+    // Add event listener for import button
+    document.getElementById('import-timetable-btn').addEventListener('click', importTimetable);
+}
+
+// Function to load departments for the import dropdown
+function loadDepartmentsForImport() {
+    fetch('/api/departments')
+        .then(response => response.json())
+        .then(departments => {
+            const departmentSelect = document.getElementById('import-department');
+            // Clear existing options except the first one
+            while (departmentSelect.options.length > 1) {
+                departmentSelect.remove(1);
+            }
+            
+            // Add departments to select
+            departments.forEach(dept => {
+                const option = document.createElement('option');
+                option.value = dept._id;
+                option.textContent = dept.name;
+                departmentSelect.appendChild(option);
+            });
+        })
+        .catch(error => {
+            console.error('Error loading departments for import:', error);
+        });
+}
+
+// Import timetable function
+function importTimetable() {
+    // Get form data
+    const departmentId = document.getElementById('import-department').value;
+    const academicYear = document.getElementById('import-academic-year').value;
+    const jsonData = document.getElementById('import-json').value;
+    
+    // Validate input
+    if (!departmentId) {
+        showImportError('Please select a department');
+        return;
+    }
+    
+    if (!academicYear) {
+        showImportError('Please enter an academic year');
+        return;
+    }
+    
+    if (!jsonData) {
+        showImportError('Please enter timetable JSON data');
+        return;
+    }
+    
+    // Parse JSON
+    let timetableData;
+    try {
+        timetableData = JSON.parse(jsonData);
+    } catch (error) {
+        showImportError('Invalid JSON format');
+        return;
+    }
+    
+    // Create request data
+    const requestData = {
+        department_id: departmentId,
+        academic_year: academicYear,
+        timetable: timetableData
+    };
+    
+    // Send request to API
+    fetch('/api/timetables/import', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestData)
+    })
+    .then(response => {
+        if (!response.ok) {
+            return response.json().then(data => {
+                throw new Error(data.message || 'Failed to import timetable');
+            });
+        }
+        return response.json();
+    })
+    .then(data => {
+        showImportSuccess('Timetable imported successfully');
+        // Clear form
+        document.getElementById('import-json').value = '';
+        // Reload timetables list
+        loadTimetables();
+    })
+    .catch(error => {
+        console.error('Error importing timetable:', error);
+        showImportError(error.message);
+    });
+}
+
+// Show import success message
+function showImportSuccess(message) {
+    const resultDiv = document.getElementById('import-result');
+    resultDiv.innerHTML = `<div class="p-4 mb-4 bg-green-100 text-green-800 rounded">${message || 'Success!'}</div>`;
+    
+    // Hide after 3 seconds
+    setTimeout(() => {
+        resultDiv.innerHTML = '';
+    }, 3000);
+}
+
+// Show import error message
+function showImportError(message) {
+    const resultDiv = document.getElementById('import-result');
+    resultDiv.innerHTML = `<div class="p-4 mb-4 bg-red-100 text-red-800 rounded">${message || 'An error occurred'}</div>`;
+    
+    // Hide after 5 seconds
+    setTimeout(() => {
+        resultDiv.innerHTML = '';
+    }, 5000);
+}
+
+// Add timetable tab handlers
+document.querySelectorAll('#timetable-tabs button').forEach(button => {
+    button.addEventListener('click', () => {
+        // Update active tab styling
+        document.querySelectorAll('#timetable-tabs button').forEach(btn => {
+            btn.classList.remove('text-blue-600', 'border-blue-600');
+            btn.classList.add('hover:text-gray-600', 'hover:border-gray-300');
+        });
+        button.classList.remove('hover:text-gray-600', 'hover:border-gray-300');
+        button.classList.add('text-blue-600', 'border-blue-600');
+        
+        // Show corresponding content
+        const tabType = button.id.replace('tab-', '');
+        document.querySelectorAll('.timetable-content').forEach(content => {
+            content.classList.add('hidden');
+        });
+        document.getElementById(`timetable-${tabType}`).classList.remove('hidden');
     });
 });
 
@@ -165,6 +373,9 @@ async function fetchDepartments() {
         
         // Update select dropdowns
         updateDepartmentDropdowns(departments);
+        
+        // Store departments globally
+        window.globalDepartments = departments;
         return departments;
         
     } catch (error) {
@@ -273,6 +484,7 @@ async function fetchSubjects() {
                 item.innerHTML = `
                     <div>
                         <div><strong>${subject.code}</strong> - ${subject.name}</div>
+                        <div class="text-sm text-gray-600">Year: ${subject.year || 'Not specified'}</div>
                         <div class="text-sm text-gray-600">Type: ${subject.type || 'lecture'}</div>
                         <div class="text-sm text-gray-600">Department: ${departmentMap[subject.department_id] || 'N/A'}</div>
                     </div>
@@ -364,21 +576,49 @@ async function fetchTimetables(departmentId = '') {
         
         // Update timetables list
         const timetablesList = document.getElementById('timetables-list');
-        if (timetables.length === 0) {
-            timetablesList.innerHTML = '<div class="text-gray-500 italic">No timetables generated yet</div>';
-        } else {
-            timetablesList.innerHTML = '';
+        // Check if the element exists before trying to modify it
+        if (timetablesList) {
+            if (timetables.length === 0) {
+                timetablesList.innerHTML = '<div class="text-gray-500 italic">No timetables generated yet</div>';
+            } else {
+                timetablesList.innerHTML = '';
+                timetables.forEach(timetable => {
+                    const item = document.createElement('div');
+                    item.classList.add('py-2', 'border-b', 'last:border-0', 'cursor-pointer', 'hover:bg-gray-100');
+                    item.innerHTML = `
+                        <div>Timetable for ${timetable.academic_year || 'Unknown Academic Year'}</div>
+                        <div class="text-sm text-gray-600">Department ID: ${timetable.department_id || 'N/A'}</div>
+                        <div class="text-sm text-gray-600">Created: ${formatDate(timetable._id)}</div>
+                    `;
+                    item.dataset.id = timetable._id;
+                    item.addEventListener('click', () => viewTimetable(timetable._id));
+                    timetablesList.appendChild(item);
+                });
+            }
+        }
+        
+        // Update timetable select dropdown
+        const timetableSelect = document.getElementById('timetable-select');
+        if (timetableSelect) {
+            // Clear existing options
+            timetableSelect.innerHTML = '<option value="">Select a Timetable</option>';
+            
+            // Add timetables to dropdown
             timetables.forEach(timetable => {
-                const item = document.createElement('div');
-                item.classList.add('py-2', 'border-b', 'last:border-0', 'cursor-pointer', 'hover:bg-gray-100');
-                item.innerHTML = `
-                    <div>Timetable for ${timetable.academic_year || 'Unknown Academic Year'}</div>
-                    <div class="text-sm text-gray-600">Department ID: ${timetable.department_id || 'N/A'}</div>
-                    <div class="text-sm text-gray-600">Created: ${formatDate(timetable._id)}</div>
-                `;
-                item.dataset.id = timetable._id;
-                item.addEventListener('click', () => viewTimetable(timetable._id));
-                timetablesList.appendChild(item);
+                const option = document.createElement('option');
+                option.value = timetable._id;
+                
+                // Try to get the department name
+                let deptName = 'Unknown Department';
+                if (window.globalDepartments && window.globalDepartments.length) {
+                    const dept = window.globalDepartments.find(d => d._id === timetable.department_id);
+                    if (dept) {
+                        deptName = dept.name;
+                    }
+                }
+                
+                option.textContent = `${deptName} - ${timetable.academic_year || 'Unknown'}`;
+                timetableSelect.appendChild(option);
             });
         }
         
@@ -414,17 +654,18 @@ async function viewTimetable(timetableId) {
         
         const timetableData = await response.json();
         
-        // Show timetable tabs and content
-        document.querySelectorAll('.timetable-content').forEach(el => {
-            el.classList.add('hidden');
-        });
-        document.getElementById('timetable-class').classList.remove('hidden');
+        if (window.appCore) {
+            window.appCore.updateTimetable(timetableData);
+        }
         
-        // Render timetables for each view
-        renderTimetable(timetableData.timetable, 'class');
-        renderTimetable(timetableData.timetable_b1 || {}, 'b1');
-        renderTimetable(timetableData.timetable_b2 || {}, 'b2');
-        renderTimetable(timetableData.timetable_b3 || {}, 'b3');
+        // Get the department for displaying
+        let department = null;
+        if (timetableData.department_id && window.globalDepartments) {
+            department = window.globalDepartments.find(d => d._id === timetableData.department_id);
+        }
+        
+        // Use timetableRenderer to display the timetable
+        window.timetableRenderer.displayFormattedTimetable(timetableData, department);
         
     } catch (error) {
         console.error('Error viewing timetable:', error);
@@ -432,89 +673,6 @@ async function viewTimetable(timetableId) {
     } finally {
         hideLoadingState();
     }
-}
-
-function renderTimetable(timetableData, type = 'class') {
-    const timetableDisplay = document.getElementById(`timetable-display-${type}`);
-    if (!timetableDisplay) {
-        console.error(`Timetable display element not found for type: ${type}`);
-        return;
-    }
-    
-    // Check if there is timetable data
-    if (!timetableData || Object.keys(timetableData).length === 0) {
-        timetableDisplay.innerHTML = '<div class="text-gray-500 italic">No timetable data available</div>';
-        return;
-    }
-    
-    let html = `
-        <table class="min-w-full border border-gray-300 mb-8">
-            <thead>
-                <tr>
-                    <th class="border border-gray-300 bg-gray-100 px-4 py-2">Day/Time</th>
-    `;
-    
-    // Add time slots to header
-    const days = Object.keys(timetableData);
-    const timeSlots = Object.keys(timetableData[days[0]] || {});
-    
-    timeSlots.forEach(slot => {
-        html += `<th class="border border-gray-300 bg-gray-100 px-4 py-2">${slot}</th>`;
-    });
-    
-    html += `</tr></thead><tbody>`;
-    
-    // Add rows for each day
-    days.forEach(day => {
-        html += `
-            <tr>
-                <td class="border border-gray-300 font-semibold px-4 py-2">${day}</td>
-        `;
-        
-        timeSlots.forEach(slot => {
-            const cellData = timetableData[day][slot];
-            
-            if (cellData && cellData.subject) {
-                html += `
-                    <td class="border border-gray-300 px-4 py-2 timetable-cell">
-                        <div class="font-semibold">${cellData.subject}</div>
-                        <div class="text-sm text-gray-600">${cellData.teacher || 'No teacher'}</div>
-                        <div class="text-sm text-gray-600">${cellData.room || 'No room'}</div>
-                        <div class="text-sm text-gray-600">${cellData.type || 'lecture'}</div>
-                    </td>
-                `;
-            } else {
-                html += `<td class="border border-gray-300 px-4 py-2 timetable-cell">-</td>`;
-            }
-        });
-        
-        html += `</tr>`;
-    });
-    
-    html += `</tbody></table>`;
-    timetableDisplay.innerHTML = html;
-}
-
-function updateDepartmentDropdowns(departments) {
-    const subjectDeptDropdown = document.getElementById('subject-department');
-    const timetableDeptDropdown = document.getElementById('timetable-department');
-    
-    // Clear existing options
-    subjectDeptDropdown.innerHTML = '<option value="">Select Department</option>';
-    timetableDeptDropdown.innerHTML = '<option value="">Select Department</option>';
-    
-    // Add departments to dropdowns
-    departments.forEach(dept => {
-        const option1 = document.createElement('option');
-        option1.value = dept._id;
-        option1.textContent = dept.name;
-        subjectDeptDropdown.appendChild(option1);
-        
-        const option2 = document.createElement('option');
-        option2.value = dept._id;
-        option2.textContent = dept.name;
-        timetableDeptDropdown.appendChild(option2);
-    });
 }
 
 // Form Handlers
@@ -616,27 +774,36 @@ async function handleSubjectSubmit(event) {
     event.preventDefault();
     
     const departmentSelect = document.getElementById('subject-department');
+    const yearSelect = document.getElementById('subject-year');
     const departmentId = departmentSelect.value;
     const departmentName = departmentSelect.options[departmentSelect.selectedIndex].text;
-    
-    // Log for debugging purposes
-    console.log(`Adding subject to department: ${departmentName} (ID: ${departmentId})`);
+    const year = yearSelect.value;
     
     const subjectData = {
         code: document.getElementById('subject-code').value,
         name: document.getElementById('subject-name').value,
         department_id: departmentId,
-        department_name: departmentName, // Store name for easier reference
-        type: document.getElementById('subject-type').value
+        department_id_str: departmentId,
+        department_name: departmentName,
+        type: document.getElementById('subject-type').value,
+        year: year // Add year information
     };
     
-    if (!subjectData.code || !subjectData.name || !subjectData.department_id) {
-        showToast('Subject code, name, and department are required!', 'error');
+    if (!subjectData.code || !subjectData.name || !subjectData.department_id || !subjectData.year) {
+        showToast('Subject code, name, department, and year are required!', 'error');
         return;
     }
     
     try {
         showLoadingState();
+        
+        // First, verify if the department exists
+        const deptCheckResponse = await fetch(`/api/departments/${departmentId}`);
+        if (!deptCheckResponse.ok) {
+            throw new Error('Selected department does not exist or is invalid');
+        }
+        
+        // Now add the subject
         const response = await fetch('/api/subjects', {
             method: 'POST',
             headers: {
@@ -736,11 +903,14 @@ async function handleGenerateTimetable(event) {
     
     const timetableData = {
         department_id: departmentId,
-        academic_year: academicYear
+        academic_year: academicYear,
+        generate_all_years: true // Always generate for all years (SE, TE, BE)
     };
     
     try {
         showLoadingState();
+        generationStatus.textContent = 'Generating timetables for all years (SE, TE, BE), please wait...';
+        
         const response = await fetch('/api/generate-timetable', {
             method: 'POST',
             headers: {
@@ -761,7 +931,8 @@ async function handleGenerateTimetable(event) {
         // Show success message
         generationStatus.classList.add('hidden');
         generationSuccess.classList.remove('hidden');
-        showToast('Timetable generated successfully!', 'success');
+        generationSuccess.textContent = 'Timetables for all years (SE, TE, BE) generated successfully!';
+        showToast('Timetables for all years generated successfully!', 'success');
         
         // Refresh timetables list
         await fetchTimetables();
@@ -783,3 +954,135 @@ async function handleGenerateTimetable(event) {
         hideLoadingState();
     }
 }
+
+// Add the missing updateDepartmentDropdowns function
+function updateDepartmentDropdowns(departments) {
+    // Update global departments variable
+    window.globalDepartments = departments;
+    
+    const subjectDeptDropdown = document.getElementById('subject-department');
+    const timetableDeptDropdown = document.getElementById('timetable-department');
+    const importDeptDropdown = document.getElementById('import-department');
+    
+    // Update subject department dropdown
+    if (subjectDeptDropdown) {
+        // Clear existing options
+        subjectDeptDropdown.innerHTML = '<option value="">Select Department</option>';
+        
+        // Add departments to dropdown
+        departments.forEach(dept => {
+            const option = document.createElement('option');
+            option.value = dept._id;
+            option.textContent = dept.name;
+            subjectDeptDropdown.appendChild(option);
+        });
+    }
+    
+    // Update timetable department dropdown
+    if (timetableDeptDropdown) {
+        // Clear existing options
+        timetableDeptDropdown.innerHTML = '<option value="">Select Department</option>';
+        
+        // Add departments to dropdown
+        departments.forEach(dept => {
+            const option = document.createElement('option');
+            option.value = dept._id;
+            option.textContent = dept.name;
+            timetableDeptDropdown.appendChild(option);
+        });
+    }
+    
+    // Update import department dropdown if it exists
+    if (importDeptDropdown) {
+        // Clear existing options
+        importDeptDropdown.innerHTML = '<option value="">Select Department</option>';
+        
+        // Add departments to dropdown
+        departments.forEach(dept => {
+            const option = document.createElement('option');
+            option.value = dept._id;
+            option.textContent = dept.name;
+            importDeptDropdown.appendChild(option);
+        });
+    }
+}document.addEventListener('DOMContentLoaded', initializeApp);
+
+function initializeApp() {
+    setupNavigation();
+    setupYearTabListeners();
+    setupFormListeners();
+    initViewSection();
+    initImportSection();
+    showSection('departments');
+}
+
+function setupNavigation() {
+    const navButtons = document.querySelectorAll('.nav-btn');
+    const sections = document.querySelectorAll('.section');
+
+    navButtons.forEach(button => {
+        button.addEventListener('click', () => {
+            updateNavButtonStyles(navButtons, button);
+            showSection(button.id.replace('nav-', ''));
+        });
+    });
+}
+
+function updateNavButtonStyles(navButtons, activeButton) {
+    navButtons.forEach(btn => {
+        btn.classList.remove('bg-blue-500', 'text-white');
+        btn.classList.add('bg-gray-200', 'hover:bg-gray-300');
+    });
+    activeButton.classList.remove('bg-gray-200', 'hover:bg-gray-300');
+    activeButton.classList.add('bg-blue-500', 'text-white');
+}
+
+function setupYearTabListeners() {
+    document.getElementById('se-year-tab').addEventListener('click', () => window.timetableRenderer.activateYearTab('SE'));
+    document.getElementById('te-year-tab').addEventListener('click', () => window.timetableRenderer.activateYearTab('TE'));
+    document.getElementById('be-year-tab').addEventListener('click', () => window.timetableRenderer.activateYearTab('BE'));
+}
+
+function setupFormListeners() {
+    document.getElementById('department-form').addEventListener('submit', handleDepartmentSubmit);
+    document.getElementById('teacher-form').addEventListener('submit', handleTeacherSubmit);
+    document.getElementById('subject-form').addEventListener('submit', handleSubjectSubmit);
+    document.getElementById('room-form').addEventListener('submit', handleRoomSubmit);
+    document.getElementById('generate-form').addEventListener('submit', handleGenerateTimetable);
+}
+
+function showSection(sectionId) {
+    const sections = document.querySelectorAll('.section');
+    sections.forEach(section => section.classList.add('hidden'));
+    document.getElementById(`${sectionId}-section`).classList.remove('hidden');
+    updateNavButtonStyles(document.querySelectorAll('.nav-btn'), document.getElementById(`nav-${sectionId}`));
+}
+
+function initViewSection() {
+    loadTimetables();
+    document.getElementById('timetable-select').addEventListener('change', function() {
+        if (this.value) {
+            fetchFormattedTimetable(this.value);
+        } else {
+            clearTimetableView();
+        }
+    });
+}
+
+function clearTimetableView() {
+    document.getElementById('timetable-view').innerHTML = '';
+    document.getElementById('timetable-header').classList.add('hidden');
+    document.getElementById('faculty-subject-details').classList.add('hidden');
+}
+
+// Load initial data
+showLoadingState();
+Promise.all([
+    fetchDepartments(),
+    fetchTeachers(),
+    fetchSubjects(),
+    fetchRooms(),
+    fetchTimetables()
+]).finally(() => {
+    hideLoadingState();
+});

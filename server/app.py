@@ -5,6 +5,8 @@ from dotenv import load_dotenv
 from pymongo import MongoClient
 from bson.objectid import ObjectId
 from timetable_generator import TimetableGenerator
+import datetime
+from collections import defaultdict
 
 # Load environment variables
 load_dotenv()
@@ -147,6 +149,22 @@ def index():
 def handle_departments():
     if request.method == 'POST':
         department_data = request.json
+        
+        # Initialize year structure if not present
+        if 'years' not in department_data:
+            department_data['years'] = {
+                'SE': {'num_batches': 3},
+                'TE': {'num_batches': 3},
+                'BE': {'num_batches': 3}
+            }
+            
+        # Add additional metadata
+        department_data['batch_prefix'] = 'B'  # Default batch prefix
+        department_data['breaks'] = [
+            "11:00 am - 11:15 am",
+            "1:15 pm - 1:45 pm"
+        ]
+        
         result = departments_collection.insert_one(department_data)
         return jsonify({"id": str(result.inserted_id), "message": "Department added successfully"}), 201
     else:
@@ -202,6 +220,12 @@ def handle_teachers():
         teachers = list(teachers_collection.find())
         for teacher in teachers:
             teacher['_id'] = str(teacher['_id'])
+            
+            # Convert ObjectId in departments list to strings
+            if 'departments' in teacher:
+                teacher['departments'] = [str(dept) if isinstance(dept, ObjectId) else dept 
+                                         for dept in teacher['departments']]
+                
         return jsonify(teachers)
 
 @app.route('/api/teachers/<teacher_id>', methods=['GET', 'PUT', 'DELETE'])
@@ -233,33 +257,55 @@ def handle_subjects():
         if 'department_id' not in subject_data or not subject_data['department_id']:
             return jsonify({"message": "Department ID is required"}), 400
             
-        # Log for debugging
-        print(f"Adding subject with department_id: {subject_data['department_id']}")
+        # Get department to validate
+        department = departments_collection.find_one({"_id": ObjectId(subject_data['department_id'])})
+        if not department:
+            return jsonify({"message": "Department not found"}), 400
         
-        # Store both ObjectId and string versions to be safe
-        try:
-            subject_data['department_id_str'] = str(subject_data['department_id'])
-        except:
-            subject_data['department_id_str'] = subject_data['department_id']
-        
-        # Add subject code if not present
-        if 'code' not in subject_data and 'name' in subject_data:
-            # Generate code from name (e.g. "Machine Learning" -> "ML")
-            words = subject_data['name'].split()
-            if len(words) == 1:
-                # Single word, take first two characters
-                subject_data['code'] = words[0][:2].upper()
-            else:
-                # Multiple words, take first letter of each word
-                subject_data['code'] = ''.join([word[0] for word in words if word.lower() not in ['and', 'of', 'the', 'in', 'on', 'a', 'an']])
-                subject_data['code'] = subject_data['code'].upper()
+        # Validate year field
+        if 'year' not in subject_data or subject_data['year'] not in ['SE', 'TE', 'BE']:
+            return jsonify({"message": "Valid year (SE/TE/BE) is required"}), 400
+            
+        # Validate subject type
+        if 'type' not in subject_data or subject_data['type'] not in ['lecture', 'practical']:
+            return jsonify({"message": "Valid type (lecture/practical) is required"}), 400
+            
+        # Store both ObjectId and string versions
+        subject_data['department_id'] = ObjectId(subject_data['department_id'])
+        subject_data['department_id_str'] = str(subject_data['department_id'])
+        subject_data['department_name'] = department.get('name', '')
+            
+        # Add lectures/practicals per week and duration based on type
+        if subject_data['type'] == 'lecture':
+            subject_data['lectures_per_week'] = 3  # Theory subjects 3 times per week
+            subject_data['duration_hours'] = 1     # 1 hour duration
+        else:  # practical
+            subject_data['practicals_per_week'] = 1  # Once per week
+            subject_data['duration_hours'] = 2       # 2 hours duration
+            
+            # For practicals, ensure consecutive slots requirement is set
+            subject_data['consecutive_slots'] = 2  # 2-hour practicals
         
         result = subjects_collection.insert_one(subject_data)
-        return jsonify({"id": str(result.inserted_id), "message": "Subject added successfully"}), 201
+        
+        # Return created subject with proper fields
+        created_subject = subjects_collection.find_one({"_id": result.inserted_id})
+        if created_subject:
+            created_subject['_id'] = str(created_subject['_id'])
+            if 'department_id' in created_subject:
+                created_subject['department_id'] = str(created_subject['department_id'])
+                
+        return jsonify({
+            "id": str(result.inserted_id), 
+            "message": "Subject added successfully",
+            "subject": created_subject
+        }), 201
     else:
         subjects = list(subjects_collection.find())
         for subject in subjects:
             subject['_id'] = str(subject['_id'])
+            if 'department_id' in subject:
+                subject['department_id'] = str(subject['department_id'])
         return jsonify(subjects)
 
 @app.route('/api/subjects/<subject_id>', methods=['GET', 'PUT', 'DELETE'])
@@ -281,6 +327,47 @@ def handle_subject(subject_id):
         if result.deleted_count:
             return jsonify({"message": "Subject deleted successfully"})
         return jsonify({"message": "Subject not found"}), 404
+
+@app.route('/api/subjects/by-department/<department_id>', methods=['GET'])
+def get_subjects_by_department(department_id):
+    """Get all subjects for a department, organized by year"""
+    year = request.args.get('year')  # Optional year filter
+    
+    try:
+        # Base query with both ObjectId and string versions of department_id
+        query = {
+            "$or": [
+                {"department_id": ObjectId(department_id)},
+                {"department_id_str": str(department_id)}
+            ]
+        }
+        
+        # Add year filter if provided
+        if year:
+            query["year"] = year
+            
+        subjects = list(subjects_collection.find(query))
+        
+        # Convert ObjectId to string for JSON response
+        for subject in subjects:
+            subject['_id'] = str(subject['_id'])
+            if 'department_id' in subject:
+                subject['department_id'] = str(subject['department_id'])
+        
+        # Group by year if no specific year requested
+        if not year:
+            subjects_by_year = {}
+            for subject in subjects:
+                year = subject.get('year', 'Unknown')
+                if year not in subjects_by_year:
+                    subjects_by_year[year] = []
+                subjects_by_year[year].append(subject)
+            return jsonify(subjects_by_year)
+        
+        return jsonify(subjects)
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/rooms', methods=['GET', 'POST'])
 def handle_rooms():
@@ -491,17 +578,67 @@ def generate_formatted_timetable():
         formatted_timetables = generator.generate_formatted_timetable(ObjectId(department_id), academic_year)
         
         if formatted_timetables:
-            # Save to database
+            # Save to database with proper format
             result = timetables_collection.insert_one({
                 "department_id": ObjectId(department_id),
                 "academic_year": academic_year,
                 "formatted_timetables": formatted_timetables,
-                "type": "formatted"
+                "type": "formatted",
+                "created_at": datetime.datetime.now().isoformat()
             })
+            
+            # Also create legacy format for backward compatibility
+            legacy_format = {}
+            for year, timetable_data in formatted_timetables.items():
+                # Convert to day-first structure needed for legacy format
+                day_first_structure = {}
+                
+                # Get all the days and time slots
+                if timetable_data:
+                    first_time_slot = next(iter(timetable_data))
+                    days = list(timetable_data[first_time_slot].keys())
+                    time_slots = list(timetable_data.keys())
+                    
+                    # Initialize days
+                    for day in days:
+                        day_first_structure[day] = {}
+                        for time_slot in time_slots:
+                            # Copy the data, converting format
+                            slot_data = timetable_data[time_slot][day]
+                            if slot_data and slot_data != "-":
+                                # Parse cell contents into subject, teacher, room
+                                cell_parts = slot_data.split(" - ") if isinstance(slot_data, str) else []
+                                if len(cell_parts) >= 2:
+                                    subject = cell_parts[0]
+                                    teacher_room = cell_parts[1]
+                                    teacher = teacher_room.split("(")[0].strip() if "(" in teacher_room else "Unknown"
+                                    room = teacher_room.split("(")[1].replace(")", "").strip() if "(" in teacher_room else "Unknown"
+                                    
+                                    day_first_structure[day][time_slot] = {
+                                        "subject": subject,
+                                        "teacher": teacher,
+                                        "room": room,
+                                        "type": "lecture" if "B" not in subject else "practical"
+                                    }
+                                else:
+                                    # Simple string, not structured data
+                                    day_first_structure[day][time_slot] = slot_data
+                            else:
+                                day_first_structure[day][time_slot] = {
+                                    "subject": None,
+                                    "teacher": None,
+                                    "room": None,
+                                    "type": None
+                                }
+                
+                legacy_format[year] = day_first_structure
+            
+            # Add legacy format to response for compatibility
             return jsonify({
                 "message": "Timetable generated successfully", 
                 "id": str(result.inserted_id),
-                "timetables": formatted_timetables
+                "timetables": formatted_timetables,
+                "legacy_format": legacy_format
             }), 201
         else:
             return jsonify({"message": "Failed to generate timetable"}), 400
@@ -534,6 +671,63 @@ def get_timetable(timetable_id):
         timetable['_id'] = str(timetable['_id'])
         if 'department_id' in timetable:
             timetable['department_id'] = str(timetable['department_id'])
+            
+        # Handle different timetable formats
+        if 'formatted_timetables' in timetable:
+            # New format with time slots as primary keys
+            return jsonify({
+                "_id": timetable['_id'],
+                "department_id": timetable.get('department_id', ''),
+                "academic_year": timetable.get('academic_year', ''),
+                "timetable": timetable['formatted_timetables']
+            })
+        elif 'timetable' in timetable:
+            # Check if it's branch format
+            branch_keys = [key for key in timetable['timetable'] if key.startswith('Branch-')]
+            if branch_keys:
+                # Handle branch format - combine into a single view
+                combined = {}
+                for day in ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]:
+                    combined[day] = {}
+                    
+                    # Get all time slots from the first branch
+                    time_slots = list(timetable['timetable']['Branch-1'][day].keys()) if 'Branch-1' in timetable['timetable'] and day in timetable['timetable']['Branch-1'] else []
+                    
+                    for time_slot in time_slots:
+                        # Skip break slots
+                        if "break" in time_slot.lower():
+                            continue
+                            
+                        combined[day][time_slot] = {}
+                        
+                        # Add data from each branch
+                        for branch_key in branch_keys:
+                            branch_num = branch_key.split('-')[1]
+                            branch_data = timetable['timetable'][branch_key].get(day, {}).get(time_slot, {})
+                            
+                            if branch_data and branch_data.get('subject'):
+                                if combined[day][time_slot].get('subject'):
+                                    # Append to existing entry
+                                    combined[day][time_slot]['subject'] += f", B{branch_num}: {branch_data['subject']}"
+                                    combined[day][time_slot]['teacher'] += f", {branch_data.get('teacher', 'N/A')}"
+                                    combined[day][time_slot]['room'] += f", {branch_data.get('room', 'N/A')}"
+                                else:
+                                    # Create new entry
+                                    combined[day][time_slot] = {
+                                        'subject': f"B{branch_num}: {branch_data.get('subject', 'N/A')}",
+                                        'teacher': branch_data.get('teacher', 'N/A'),
+                                        'room': branch_data.get('room', 'N/A'),
+                                        'type': branch_data.get('type', 'lecture')
+                                    }
+                
+                return jsonify({
+                    "_id": timetable['_id'],
+                    "department_id": timetable.get('department_id', ''),
+                    "academic_year": timetable.get('academic_year', ''),
+                    "timetable": combined
+                })
+                
+        # Default: return as-is
         return jsonify(timetable)
     else:
         return jsonify({"message": "Timetable not found"}), 404
@@ -628,6 +822,115 @@ def check_conflicts():
     except Exception as e:
         print(f"Error checking conflicts: {e}")
         return jsonify({"message": f"Error: {str(e)}"}), 500
+
+@app.route('/api/debug/subjects-by-department/<department_id>', methods=['GET'])
+def debug_subjects_by_department(department_id):
+    """Debug endpoint to check what subjects exist for a department"""
+    try:
+        # Get the department
+        department = departments_collection.find_one({"_id": ObjectId(department_id)})
+        if not department:
+            return jsonify({
+                "error": "Department not found", 
+                "department_id": department_id
+            }), 404
+            
+        # Try different formats of the ID
+        dept_id_str = str(department_id)
+        dept_id_obj = ObjectId(department_id)
+        
+        # Query subjects with different formats
+        subjects_by_str = list(subjects_collection.find({"department_id": dept_id_str}))
+        subjects_by_obj = list(subjects_collection.find({"department_id": dept_id_obj}))
+        
+        # Also check the department_id_str field we added
+        subjects_by_str_field = list(subjects_collection.find({"department_id_str": dept_id_str}))
+        
+        # Convert ObjectId to string for JSON response
+        for subjects in [subjects_by_str, subjects_by_obj, subjects_by_str_field]:
+            for subject in subjects:
+                if '_id' in subject:
+                    subject['_id'] = str(subject['_id'])
+        
+        return jsonify({
+            "department": {
+                "id": str(department["_id"]),
+                "name": department.get("name", "Unknown")
+            },
+            "subjects_by_string_id": {
+                "count": len(subjects_by_str),
+                "subjects": subjects_by_str
+            },
+            "subjects_by_object_id": {
+                "count": len(subjects_by_obj),
+                "subjects": subjects_by_obj
+            },
+            "subjects_by_string_field": {
+                "count": len(subjects_by_str_field),
+                "subjects": subjects_by_str_field
+            }
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/timetables/import', methods=['POST'])
+def import_timetable_data():
+    try:
+        timetable_data = request.json
+        
+        # Validate required fields
+        if not timetable_data.get('department_id') or not timetable_data.get('academic_year') or not timetable_data.get('timetable'):
+            return jsonify({"message": "Missing required fields"}), 400
+        
+        # Convert department_id to ObjectId if it's a string
+        if isinstance(timetable_data['department_id'], str):
+            try:
+                timetable_data['department_id'] = ObjectId(timetable_data['department_id'])
+            except:
+                pass  # Keep as string if not valid ObjectId
+        
+        # Add created timestamp
+        timetable_data['created_at'] = datetime.datetime.now()
+        
+        # Insert the timetable
+        result = timetables_collection.insert_one(timetable_data)
+        
+        return jsonify({
+            "id": str(result.inserted_id), 
+            "message": "Timetable imported successfully"
+        }), 201
+    except Exception as e:
+        return jsonify({"message": f"Error importing timetable: {str(e)}"}), 500
+
+@app.route('/api/timetables/<timetable_id>/formatted', methods=['GET'])
+def get_formatted_timetable(timetable_id):
+    try:
+        # Find the timetable
+        timetable = timetables_collection.find_one({"_id": ObjectId(timetable_id)})
+        if not timetable:
+            return jsonify({"message": "Timetable not found"}), 404
+        
+        # Convert ObjectId to string for JSON serialization
+        timetable['_id'] = str(timetable['_id'])
+        if 'department_id' in timetable and isinstance(timetable['department_id'], ObjectId):
+            timetable['department_id'] = str(timetable['department_id'])
+        
+        # If department exists, get department details
+        department = None
+        if 'department_id' in timetable:
+            try:
+                department = departments_collection.find_one({"_id": ObjectId(timetable['department_id'])})
+                if department:
+                    department['_id'] = str(department['_id'])
+            except:
+                pass
+        
+        return jsonify({
+            "timetable": timetable,
+            "department": department
+        })
+    except Exception as e:
+        return jsonify({"message": f"Error retrieving timetable: {str(e)}"}), 500
 
 if __name__ == '__main__':
     app.run(debug=True)

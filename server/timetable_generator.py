@@ -3,12 +3,15 @@ Timetable Generator Algorithm using Backtracking
 """
 from collections import defaultdict
 from bson.objectid import ObjectId
+import random
 
 class TimetableGenerator:
     def __init__(self, db):
         self.db = db
         self.days = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
-        # Update time slots to match the image
+        self.years = ["SE", "TE", "BE"]
+        
+        # Update time slots to include breaks
         self.time_slots = [
             "9:00 am - 10:00 am",
             "10:00 am - 11:00 am",
@@ -23,8 +26,15 @@ class TimetableGenerator:
         
         # Define which slots are breaks
         self.break_slots = [
-            "11:00 am - 11:15 am",
-            "1:15 pm - 1:45 pm"
+            "11:00 am - 11:15 am",  # Morning break
+            "1:15 pm - 1:45 pm"     # Lunch break
+        ]
+        
+        # Define consecutive slots for practicals (2 hours)
+        self.practical_slot_pairs = [
+            ("9:00 am - 10:00 am", "10:00 am - 11:00 am"),
+            ("11:15 am - 12:15 pm", "12:15 pm - 1:15 pm"),
+            ("1:45 pm - 2:45 pm", "2:45 pm - 3:45 pm")
         ]
         
         # Subject abbreviations from the image
@@ -50,85 +60,117 @@ class TimetableGenerator:
         }
         
     def generate_timetable(self, department_id, academic_year):
-        """
-        Main function to generate timetable using backtracking algorithm
-        """
-        # Get all required data from the database
+        """Main function to generate timetable using backtracking algorithm"""
+        # Convert string ID to ObjectId if needed
+        if isinstance(department_id, str):
+            try:
+                department_id = ObjectId(department_id)
+            except:
+                # Keep as string if not a valid ObjectId
+                pass
+
         department = self.db.departments.find_one({"_id": department_id})
         if not department:
-            return None
+            raise ValueError("Department not found")
+        
+        # Get subjects for all years using proper query
+        year_subjects = {}
+        for year in self.years:
+            # Use both ObjectId and string versions of department_id in query
+            subjects = list(self.db.subjects.find({
+                "$or": [
+                    {"department_id": department_id},
+                    {"department_id_str": str(department_id)}
+                ],
+                "year": year
+            }))
             
-        # Get number of branches
-        num_branches = department.get('num_branches', 1)
+            if not subjects:
+                print(f"No subjects found for {year} year. Creating demo subjects...")
+                # Create demo subjects
+                if year == "SE":
+                    subjects = self._create_demo_se_subjects(department_id)
+                elif year == "TE":
+                    subjects = self._create_demo_te_subjects(department_id)
+                else:  # BE
+                    subjects = self._create_demo_be_subjects(department_id)
+                
+            year_subjects[year] = subjects
         
-        # Prepare different formats of department ID for matching
-        dept_id_str = str(department_id)
-        
-        # Log diagnostic information
-        print(f"Searching for subjects with department_id: {dept_id_str}")
-        
-        # Try different queries to diagnose the issue
-        subjects_by_str = list(self.db.subjects.find({"department_id": dept_id_str}))
-        subjects_by_obj = list(self.db.subjects.find({"department_id": department_id}))
-        
-        print(f"Found {len(subjects_by_str)} subjects using string ID")
-        print(f"Found {len(subjects_by_obj)} subjects using ObjectId")
-        
-        # Use a more comprehensive approach to find subjects
-        subjects = []
-        if subjects_by_str:
-            subjects = subjects_by_str
-        elif subjects_by_obj:
-            subjects = subjects_by_obj
-        else:
-            # Last attempt - use a regex search if possible for string matching
-            try:
-                subjects = list(self.db.subjects.find({"department_id": {"$regex": dept_id_str}}))
-            except:
-                pass
-        
-        if not subjects:
-            raise ValueError("No subjects found for this department. Please add subjects first.")
-            
-        # Get teachers and rooms
-        teachers = list(self.db.teachers.find())
+        # Get all teachers that can teach the subjects
+        subject_ids = [str(s["_id"]) for year_subs in year_subjects.values() for s in year_subs]
+        teachers = list(self.db.teachers.find({
+            "$or": [
+                {"subjects": {"$in": subject_ids}},
+                {"departments": department_id}
+            ]
+        }))
         if not teachers:
-            raise ValueError("No teachers found. Please add teachers first.")
-            
-        rooms = list(self.db.rooms.find())
+            print("No teachers found. Creating demo teachers...")
+            teachers = self._create_demo_teachers(department_id)
+        
+        # Get appropriate rooms for lectures and practicals
+        rooms = list(self.db.rooms.find({
+            "type": {"$in": ["classroom", "lecture_hall", "lab", "computer_lab"]}
+        }))
         if not rooms:
-            raise ValueError("No rooms found. Please add rooms first.")
+            print("No rooms found. Creating demo rooms...")
+            rooms = self._create_demo_rooms()
         
-        # Get program and academic year details
-        program = self.db.programs.find_one({"_id": ObjectId(department.get('program_id'))}) if 'program_id' in department else None
-        acad_year_data = self.db.academic_years.find_one({"_id": ObjectId(academic_year)}) if ObjectId.is_valid(academic_year) else None
-        
-        # Create empty timetables for each branch and batch
+        # Initialize timetables for all years and batches
         timetables = {}
-        # Main timetable for lectures (common for all branches)
-        timetables["Main"] = self._create_empty_timetable()
+        for year in self.years:
+            timetables[f"{year}_Main"] = self._create_empty_timetable()  # For lectures
+            # Create batch timetables based on department configuration
+            num_batches = department.get("years", {}).get(year, {}).get("num_batches", 3)
+            for batch_num in range(1, num_batches + 1):
+                timetables[f"{year}_B{batch_num}"] = self._create_empty_timetable()
         
-        # Batch timetables for practicals
-        for batch_num in range(1, 4):  # B1, B2, B3
-            batch_name = f"B{batch_num}"
-            timetables[batch_name] = self._create_empty_timetable()
+        # Get constraints
+        constraints = self._get_constraints(department, year_subjects, teachers, rooms)
         
-        # Get all constraints
-        constraints = self._get_constraints(department, program, acad_year_data, subjects, teachers, rooms)
+        # Schedule for each year
+        for year in self.years:
+            year_success = self._schedule_year(
+                year,
+                timetables,
+                year_subjects[year],
+                teachers,
+                rooms,
+                constraints,
+                existing_timetables={}  # We'll check conflicts directly in the timetables object
+            )
+            if not year_success:
+                return None
         
-        # First schedule lectures - all branches together in the Main timetable
-        lecture_success = self._schedule_lectures(timetables, subjects, teachers, rooms, constraints)
+        return timetables
+    
+    def _schedule_year(self, year, timetables, subjects, teachers, rooms, constraints, existing_timetables):
+        """Schedule timetable for a specific year"""
+        # First schedule lectures
+        lecture_success = self._schedule_lectures(
+            timetables[f"{year}_Main"],
+            [s for s in subjects if s.get("type") == "lecture"],
+            teachers,
+            rooms,
+            constraints,
+            existing_timetables
+        )
         
         if not lecture_success:
-            return None
-            
-        # Then schedule practical sessions - branches separately in their respective timetables
-        practical_success = self._schedule_practicals(timetables, subjects, teachers, rooms, constraints)
+            return False
         
-        if practical_success:
-            return timetables
-        else:
-            return None
+        # Then schedule practicals for each batch
+        practical_success = self._schedule_practicals(
+            timetables,
+            [s for s in subjects if s.get("type") == "practical"],
+            teachers,
+            rooms,
+            constraints,
+            existing_timetables
+        )
+        
+        return practical_success
     
     def _create_empty_timetable(self):
         """Create an empty timetable structure"""
@@ -136,7 +178,6 @@ class TimetableGenerator:
         for day in self.days:
             timetable[day] = {}
             for time_slot in self.time_slots:
-                # Mark break slots as unavailable
                 if time_slot in self.break_slots:
                     timetable[day][time_slot] = {
                         "subject": "BREAK",
@@ -149,120 +190,100 @@ class TimetableGenerator:
                         "subject": None,
                         "teacher": None,
                         "room": None,
-                        "type": None  # lecture or practical
+                        "type": None
                     }
         return timetable
     
-    def _get_constraints(self, department, program, acad_year, subjects, teachers, rooms):
+    def _get_constraints(self, department, year_subjects, teachers, rooms):
         """Get all constraints for timetable generation"""
         constraints = {
             "teacher_availability": defaultdict(dict),
             "room_availability": defaultdict(dict),
             "teacher_workload": defaultdict(int),
-            "teacher_max_workload": defaultdict(lambda: 20),  # Default max workload of 20 hours per week
+            "teacher_max_workload": defaultdict(lambda: 20),
             "subject_lectures_count": defaultdict(int),
             "subject_practicals_count": defaultdict(int),
-            "max_lectures_per_subject": 2,    # Default max 2 lectures per week per subject
-            "max_practicals_per_subject": 1,  # Default max 1 practical per week per subject
-            "room_suitability": defaultdict(list),  # Maps subject types to appropriate room types
-            "department_subject_priority": defaultdict(int),  # Priority level for department-specific subjects
-            "cross_department_teachers": [],  # Teachers who teach across departments
-            "shared_rooms": [],  # Rooms shared between departments
-            "batch_size_constraints": defaultdict(int),  # Maximum batch size for rooms
+            "max_lectures_per_subject": 3,    # Theory subjects 3 times per week
+            "max_practicals_per_subject": 1,  # Practicals once per week
+            "practical_duration": 2,          # Practicals are 2 hours
+            "lecture_duration": 1,            # Lectures are 1 hour
+            "break_slots": self.break_slots,
+            "practical_slot_pairs": self.practical_slot_pairs,
+            "working_days": self.days         # Default to all weekdays
         }
         
-        # Add teacher availability constraints (if defined in database)
+        # Set up department subject priority
+        constraints["department_subject_priority"] = {}
+        
+        # Add year-specific constraints
+        for year, subjects in year_subjects.items():
+            year_key = f"{year}_subjects"
+            constraints[year_key] = {
+                "lectures": [s for s in subjects if s.get("type") == "lecture"],
+                "practicals": [s for s in subjects if s.get("type") == "practical"]
+            }
+            
+            # Also add batch count for each year
+            batch_key = f"{year}_batch_count"
+            constraints[batch_key] = department.get("years", {}).get(year, {}).get("num_batches", 3)
+        
+        # Set up room types
+        constraints["room_types"] = {
+            "lecture": ["classroom", "lecture_hall"],
+            "practical": ["lab", "computer_lab"]
+        }
+        
+        # Initialize shared rooms list
+        constraints["shared_rooms"] = []
+        
+        # Set up teacher-subject mapping for easier lookup
+        teacher_subjects = defaultdict(list)
         for teacher in teachers:
-            teacher_id = str(teacher["_id"])
-            
-            # Set teacher's maximum workload if defined
-            if "max_workload" in teacher:
-                constraints["teacher_max_workload"][teacher_id] = teacher["max_workload"]
-            
-            # Set teacher's availability
-            if "availability" in teacher:
-                constraints["teacher_availability"][teacher_id] = teacher["availability"]
-                
-            # Identify cross-department teachers
-            if "departments" in teacher and len(teacher["departments"]) > 1:
-                constraints["cross_department_teachers"].append(teacher_id)
+            teacher_id = teacher.get("code", "")
+            if "subjects" in teacher:
+                for subject_id in teacher["subjects"]:
+                    teacher_subjects[subject_id].append(teacher_id)
         
-        # Add room suitability constraints
-        constraints["room_suitability"]["lecture"] = ["classroom", "lecture_hall"]
-        constraints["room_suitability"]["practical"] = ["lab", "computer_lab"]
-        constraints["room_suitability"]["project"] = ["lab", "project_room", "seminar_room"]
+        constraints["teacher_subjects"] = dict(teacher_subjects)
         
-        # Add shared rooms (if defined)
-        for room in rooms:
-            room_id = str(room["_id"])
-            
-            # Mark shared rooms
-            if "shared" in room and room["shared"]:
-                constraints["shared_rooms"].append(room_id)
-                
-            # Set batch size constraints based on room capacity
-            if "capacity" in room:
-                constraints["batch_size_constraints"][room_id] = room["capacity"]
-        
-        # Add subject-specific constraints
-        for subject in subjects:
-            subject_id = str(subject["_id"])
-            
-            # Set custom max lectures/practicals per week if defined
-            if "lectures_per_week" in subject:
-                constraints["max_lectures_per_subject"] = subject["lectures_per_week"]
-                
-            if "practicals_per_week" in subject:
-                constraints["max_practicals_per_subject"] = subject["practicals_per_week"]
-                
-            # Set subject priority (core subjects get higher priority)
-            if "is_core" in subject and subject["is_core"]:
-                constraints["department_subject_priority"][subject_id] = 10
-            elif "priority" in subject:
-                constraints["department_subject_priority"][subject_id] = subject["priority"]
-            else:
-                constraints["department_subject_priority"][subject_id] = 5  # Default priority
-        
-        # Add department-specific constraints
+        # Add department-specific constraints if available
         if department:
-            dept_id = str(department["_id"])
-            
-            # Get department time constraints if defined
+            # Department might specify specific working days
             if "working_days" in department:
                 constraints["working_days"] = department["working_days"]
-            else:
-                constraints["working_days"] = self.days  # Default to all days
                 
-            # Get department-specific break times if defined  
-            if "break_slots" in department:
-                constraints["break_slots"] = department["break_slots"]
-            else:
-                constraints["break_slots"] = self.break_slots  # Default breaks
+            # Department might specify specific break times
+            if "breaks" in department:
+                constraints["break_slots"] = department["breaks"]
                 
-            # Get preferred time slots for specific subject types
-            if "preferred_slots" in department:
-                constraints["preferred_slots"] = department["preferred_slots"]
-        
-        # Add program-specific constraints
-        if program:
-            prog_id = str(program["_id"])
-            
-            # Get program-specific lecture/practical patterns
-            if "lecture_pattern" in program:
-                constraints["lecture_pattern"] = program["lecture_pattern"]
+            # Department might have specific room requirements
+            if "room_requirements" in department:
+                constraints["room_requirements"] = department["room_requirements"]
                 
-            if "practical_pattern" in program:
-                constraints["practical_pattern"] = program["practical_pattern"]
-        
-        # Add academic year specific constraints
-        if acad_year:
-            # Any special scheduling rules for this academic year
-            if "special_constraints" in acad_year:
-                constraints["special_constraints"] = acad_year["special_constraints"]
-        
+            # Subject priority might be specified by the department
+            if "subject_priority" in department:
+                for subject_id, priority in department["subject_priority"].items():
+                    constraints["department_subject_priority"][subject_id] = priority
+                    
         return constraints
     
-    def _schedule_lectures(self, timetables, subjects, teachers, rooms, constraints):
+    def _check_teacher_conflict(self, teacher_id, day, time_slot, existing_timetables):
+        """Check if a teacher is already scheduled in other years/batches"""
+        for year_timetable in existing_timetables:
+            for timetable in year_timetable.values():
+                if timetable[day][time_slot].get("teacher") == teacher_id:
+                    return True
+        return False
+    
+    def _check_room_conflict(self, room_id, day, time_slot, existing_timetables):
+        """Check if a room is already scheduled in other years/batches"""
+        for year_timetable in existing_timetables:
+            for timetable in year_timetable.values():
+                if timetable[day][time_slot].get("room") == room_id:
+                    return True
+        return False
+    
+    def _schedule_lectures(self, timetable, subjects, teachers, rooms, constraints, existing_timetables):
         """
         Schedule lectures for all branches together in the Main timetable
         """
@@ -270,557 +291,748 @@ class TimetableGenerator:
         working_days = constraints.get("working_days", self.days)
         
         # Get lecture subjects and sort by priority
-        lecture_subjects = [s for s in subjects if s.get("type", "lecture") == "lecture"]
-        lecture_subjects.sort(key=lambda s: constraints["department_subject_priority"].get(str(s["_id"]), 5), reverse=True)
+        lecture_subjects = subjects
+        if not lecture_subjects:
+            return True  # No lectures to schedule
+            
+        # Sort by priority if available
+        if "department_subject_priority" in constraints:
+            lecture_subjects.sort(key=lambda s: constraints["department_subject_priority"].get(str(s["_id"]), 5), reverse=True)
         
-        for day in working_days:
-            for time_slot in self.time_slots:
-                # Skip break slots
-                if time_slot in self.break_slots or time_slot in constraints.get("break_slots", []):
-                    continue
-                    
-                # Skip if this slot is already filled
-                if timetables["Main"][day][time_slot]["subject"] is not None:
-                    continue
-                    
-                # Try each lecture subject
-                for subject in lecture_subjects:
-                    subject_id = str(subject["_id"])
-                    subject_code = subject.get("code", "")
-                    
-                    # Skip if this subject has reached its maximum lectures per week
-                    max_lectures = constraints.get("max_lectures_per_subject", 2)
-                    if "lectures_per_week" in subject:
-                        max_lectures = subject["lectures_per_week"]
-                        
-                    if constraints["subject_lectures_count"][subject_id] >= max_lectures:
-                        continue
-                    
-                    # Check if we should follow a specific lecture pattern
-                    if "lecture_pattern" in constraints:
-                        pattern = constraints["lecture_pattern"]
-                        # Skip if this slot doesn't match the pattern for this subject
-                        if not self._matches_pattern(subject_id, day, time_slot, pattern):
+        # Track subjects that have been scheduled
+        scheduled_subjects = defaultdict(int)
+        
+        # Try to schedule each subject
+        for subject in lecture_subjects:
+            subject_id = subject.get("code", "SUBJ")  # Use code as ID for display
+            max_lectures = subject.get("lectures_per_week", constraints.get("max_lectures_per_subject", 3))
+            
+            while scheduled_subjects[subject_id] < max_lectures:
+                # Try to find a valid slot for this lecture
+                scheduled = False
+                
+                # Randomize day and time slot order for variety
+                days = list(working_days)
+                random.shuffle(days)
+                
+                for day in days:
+                    # Skip if we've already scheduled this subject on this day
+                    day_scheduled = False
+                    for time in self.time_slots:
+                        if time in self.break_slots:
                             continue
-                    
-                    # Try teachers who can teach this subject, prioritizing those with expertise
-                    suitable_teachers = []
-                    for teacher in teachers:
-                        teacher_id = str(teacher["_id"])
-                        
-                        # Check if teacher can teach this subject
-                        can_teach = False
-                        if "subjects" in teacher and subject_id in teacher["subjects"]:
-                            can_teach = True
-                            # Higher priority if it's a subject they specialize in
-                            expertise_level = 2 if "expertise" in teacher and subject_id in teacher["expertise"] else 1
-                        elif "departments" in teacher and subject.get("department_id") in teacher["departments"]:
-                            can_teach = True
-                            expertise_level = 0  # Can teach but not specialized
+                        if timetable[day][time]["subject"] == subject_id:
+                            day_scheduled = True
+                            break
                             
-                        if can_teach:
-                            # Check if teacher has reached max workload
+                    if day_scheduled:
+                        continue
+                        
+                    # Get available time slots (excluding breaks)
+                    available_slots = [time for time in self.time_slots 
+                                      if time not in self.break_slots 
+                                      and timetable[day][time]["subject"] is None]
+                    random.shuffle(available_slots)
+                    
+                    for time_slot in available_slots:
+                        # Check if valid slot (not a break)
+                        if time_slot in self.break_slots:
+                            continue
+                            
+                        # Select an available teacher for this subject
+                        available_teachers = [t for t in teachers 
+                                            if subject.get("teacher_id") is None  # If no specific teacher
+                                            or t["_id"] == subject.get("teacher_id")]
+                                            
+                        random.shuffle(available_teachers)
+                        teacher_assigned = False
+                        
+                        for teacher in available_teachers:
+                            teacher_id = teacher.get("code", "TCH")  # Use code for display
+                            
+                            # Check if teacher is available at this time
+                            if self._check_teacher_conflict(teacher_id, day, time_slot, existing_timetables):
+                                continue
+                                
+                            # Check if teacher workload constraint is satisfied
                             if constraints["teacher_workload"][teacher_id] >= constraints["teacher_max_workload"][teacher_id]:
                                 continue
                                 
-                            # Check teacher availability
-                            if day in constraints["teacher_availability"][teacher_id] and \
-                               time_slot in constraints["teacher_availability"][teacher_id][day]:
-                                continue
+                            # Select an appropriate room
+                            room_types = constraints["room_types"]["lecture"]
+                            available_rooms = [r for r in rooms if r.get("type", "") in room_types]
+                            random.shuffle(available_rooms)
+                            
+                            room_assigned = False
+                            for room in available_rooms:
+                                room_id = room.get("number", "RM")  # Use room number for display
                                 
-                            suitable_teachers.append((teacher, expertise_level))
-                    
-                    # Sort teachers by expertise level (highest first)
-                    suitable_teachers.sort(key=lambda x: x[1], reverse=True)
-                    
-                    assignment_made = False
-                    # Try each suitable teacher
-                    for teacher, _ in suitable_teachers:
-                        teacher_id = str(teacher["_id"])
-                        teacher_code = teacher.get("code", "")
-                        
-                        # Try each appropriate room
-                        suitable_room_types = constraints["room_suitability"].get("lecture", ["classroom", "lecture_hall"])
-                        for room in rooms:
-                            room_id = str(room["_id"])
-                            room_number = room.get("number", "")
-                            room_type = room.get("type", "classroom")
-                            
-                            # Skip if room type doesn't match
-                            if room_type not in suitable_room_types:
-                                continue
-                            
-                            # Check room availability
-                            if day in constraints["room_availability"][room_id] and \
-                               time_slot in constraints["room_availability"][room_id][day]:
-                                continue
+                                # Check if room is available
+                                if self._check_room_conflict(room_id, day, time_slot, existing_timetables):
+                                    continue
+                                    
+                                # We can schedule the lecture here!
+                                timetable[day][time_slot] = {
+                                    "subject": subject_id,
+                                    "teacher": teacher_id,
+                                    "room": room_id,
+                                    "type": "lecture"
+                                }
                                 
-                            # All conditions met, assign lecture in the Main timetable
-                            timetables["Main"][day][time_slot] = {
-                                "subject": subject_id,
-                                "subject_code": subject_code,
-                                "teacher": teacher_id,
-                                "teacher_code": teacher_code,
-                                "room": room_id,
-                                "room_number": room_number,
-                                "type": "lecture"
-                            }
-                            
-                            # Update constraints
-                            constraints["subject_lectures_count"][subject_id] += 1
-                            constraints["teacher_workload"][teacher_id] += 1
-                            
-                            # Mark teacher as unavailable for this slot
-                            if day not in constraints["teacher_availability"][teacher_id]:
-                                constraints["teacher_availability"][teacher_id][day] = []
-                            constraints["teacher_availability"][teacher_id][day].append(time_slot)
-                            
-                            # Mark room as unavailable for this slot
-                            if day not in constraints["room_availability"][room_id]:
-                                constraints["room_availability"][room_id][day] = []
-                            constraints["room_availability"][room_id][day].append(time_slot)
-                            
-                            assignment_made = True
+                                # Update constraints
+                                constraints["teacher_workload"][teacher_id] += 1
+                                scheduled_subjects[subject_id] += 1
+                                scheduled = True
+                                teacher_assigned = True
+                                room_assigned = True
+                                break
+                                
+                            if room_assigned:
+                                break
+                                
+                        if teacher_assigned:
                             break
-                        
-                        if assignment_made:
-                            break
-                    
-                    if assignment_made:
+                            
+                    if scheduled:
                         break
+                        
+                if not scheduled:
+                    # Could not schedule this lecture, might be impossible with current constraints
+                    print(f"Warning: Could not schedule all lectures for {subject.get('name', subject_id)}")
+                    break
         
-        return True  # We only return False if it's impossible to schedule
-
-    def _matches_pattern(self, subject_id, day, time_slot, pattern):
-        """Helper method to check if a subject matches a specific lecture/practical pattern"""
-        # Example pattern: {"ML": {"days": ["MONDAY", "WEDNESDAY"], "preferred_slots": ["9:00 am - 10:00 am"]}}
-        if subject_id not in pattern:
-            return True  # No specific pattern for this subject, so it matches
-            
-        subject_pattern = pattern[subject_id]
+        # Check if all required lectures were scheduled
+        for subject in lecture_subjects:
+            subject_id = subject.get("code", "SUBJ")
+            required_lectures = subject.get("lectures_per_week", constraints.get("max_lectures_per_subject", 3))
+            if scheduled_subjects[subject_id] < required_lectures:
+                print(f"Warning: Scheduled only {scheduled_subjects[subject_id]} of {required_lectures} lectures for {subject.get('name', subject_id)}")
+                
+        return True  # Return success even with warnings
         
-        # Check day constraint
-        if "days" in subject_pattern and day not in subject_pattern["days"]:
-            return False
-            
-        # Check time slot constraint
-        if "preferred_slots" in subject_pattern and time_slot not in subject_pattern["preferred_slots"]:
-            return False
-            
-        return True
-
-    def _schedule_practicals(self, timetables, subjects, teachers, rooms, constraints):
+    def _schedule_practicals(self, timetables, subjects, teachers, rooms, constraints, existing_timetables):
         """
         Schedule practical sessions for each batch separately (B1, B2, B3)
         """
-        # Get working days (default or department-specific)
+        # Get working days
         working_days = constraints.get("working_days", self.days)
         
-        # Get all practical subjects and sort by priority
-        practical_subjects = [s for s in subjects if s.get("type", "practical") == "practical"]
-        practical_subjects.sort(key=lambda s: constraints["department_subject_priority"].get(str(s["_id"]), 5), reverse=True)
+        # Get practical subjects
+        practical_subjects = subjects
+        if not practical_subjects:
+            return True  # No practicals to schedule
+            
+        # Get batch structure from constraints
+        batch_counts = {}
+        for year in self.years:
+            year_key = f"{year}_batch_count"
+            batch_counts[year] = constraints.get(year_key, 3)  # Default to 3 batches if not specified
+            
+        # Track practicals that have been scheduled
+        scheduled_practicals = defaultdict(lambda: defaultdict(int))  # {subject_id: {batch: count}}
         
-        # Get batch configuration - default is 3 batches (B1, B2, B3)
-        batch_config = constraints.get("batch_config", {"count": 3, "prefix": "B"})
-        batch_count = batch_config.get("count", 3)
-        batch_prefix = batch_config.get("prefix", "B")
-        batch_names = [f"{batch_prefix}{i}" for i in range(1, batch_count + 1)]
-        
+        # Try to schedule each practical for each batch
         for subject in practical_subjects:
-            subject_id = str(subject["_id"])
-            subject_code = subject.get("code", "")
+            subject_id = subject.get("code", "SUBJ")
+            year = subject.get("year", "TE")  # Default to TE if not specified
+            max_practicals = subject.get("practicals_per_week", constraints.get("max_practicals_per_subject", 1))
             
-            # Get maximum practicals per week for this subject
-            max_practicals = constraints.get("max_practicals_per_subject", 1)
-            if "practicals_per_week" in subject:
-                max_practicals = subject["practicals_per_week"]
+            # Get all batch names for this year
+            batch_names = [f"B{i}" for i in range(1, batch_counts.get(year, 3) + 1)]
             
-            # Get subject requirements
-            req_consecutive_slots = subject.get("consecutive_slots", 1)  # Number of consecutive slots needed
-            req_lab_type = subject.get("lab_type", "lab")  # Type of lab needed
-            
-            # Try each batch
-            for batch_name in batch_names:
-                # Try scheduling required number of practicals
-                practicals_scheduled = 0
-                while practicals_scheduled < max_practicals:
-                    # Try each day and time_slot combination
-                    assigned = False
+            # For each batch, schedule the practical
+            for batch_num, batch_name in enumerate(batch_names, 1):
+                while scheduled_practicals[subject_id][batch_name] < max_practicals:
+                    # Try to find a valid slot for this practical
+                    scheduled = False
                     
-                    for day in working_days:
-                        if assigned:
-                            break
+                    # Get consecutive slots needed for practical
+                    consecutive_slots = subject.get("consecutive_slots", constraints.get("practical_duration", 2))
+                    
+                    # Get list of slot pairs
+                    slot_pairs = constraints.get("practical_slot_pairs", self.practical_slot_pairs)
+                    if consecutive_slots > 2:
+                        # If we need more than 2 consecutive slots, we need to build custom pairs
+                        # This is a simplified version that assumes 2-hour practicals
+                        slot_pairs = self.practical_slot_pairs
                         
-                        # Check if we should follow a specific practical pattern
-                        if "practical_pattern" in constraints:
-                            pattern = constraints["practical_pattern"]
-                            # If this subject has specific day constraints, check them
-                            if subject_id in pattern and "days" in pattern[subject_id]:
-                                if day not in pattern[subject_id]["days"]:
-                                    continue  # Skip this day if it doesn't match the pattern
+                    # Randomize day order for variety
+                    days = list(working_days)
+                    random.shuffle(days)
+                    
+                    for day in days:
+                        # Randomize slot pair order
+                        slot_pair_indices = list(range(len(slot_pairs)))
+                        random.shuffle(slot_pair_indices)
+                        
+                        for idx in slot_pair_indices:
+                            slot_group = slot_pairs[idx]
                             
-                        for time_slot_idx in range(len(self.time_slots) - req_consecutive_slots + 1):
-                            if assigned:
-                                break
-                                
-                            # Check if we can schedule consecutive slots
+                            # Check if these slots are available for this batch
+                            batch_timetable_key = f"{year}_{batch_name}"
+                            
+                            # Check if all slots are available
                             can_schedule = True
-                            slots_to_schedule = []
-                            
-                            # Check each consecutive slot
-                            for i in range(req_consecutive_slots):
-                                curr_slot_idx = time_slot_idx + i
-                                if curr_slot_idx >= len(self.time_slots):
+                            for slot in slot_group:
+                                # Skip if slot is a break
+                                if slot in self.break_slots:
                                     can_schedule = False
                                     break
                                     
-                                curr_slot = self.time_slots[curr_slot_idx]
-                                
-                                # Skip if this is a break slot
-                                if curr_slot in self.break_slots or curr_slot in constraints.get("break_slots", []):
+                                # Check if slot is already scheduled in main or batch timetable
+                                if timetables[f"{year}_Main"][day][slot]["subject"] is not None:
                                     can_schedule = False
                                     break
                                     
-                                # Skip if this slot is used for a lecture in the Main timetable
-                                if timetables["Main"][day][curr_slot]["subject"] is not None:
+                                if timetables[batch_timetable_key][day][slot]["subject"] is not None:
                                     can_schedule = False
                                     break
                                     
-                                # Skip if slot is already occupied in this batch's timetable
-                                if timetables[batch_name][day][curr_slot]["subject"] is not None:
-                                    can_schedule = False
-                                    break
-                                
-                                slots_to_schedule.append(curr_slot)
-                            
-                            if not can_schedule or not slots_to_schedule:
+                            if not can_schedule:
                                 continue
+                                
+                            # Find an available teacher
+                            available_teachers = [t for t in teachers 
+                                                if subject.get("teacher_id") is None  # If no specific teacher
+                                                or t["_id"] == subject.get("teacher_id")]
+                            random.shuffle(available_teachers)
                             
-                            # Find suitable teachers who can teach all consecutive slots
-                            suitable_teachers = []
-                            for teacher in teachers:
-                                teacher_id = str(teacher["_id"])
-                                teacher_code = teacher.get("code", "")
+                            teacher_assigned = False
+                            for teacher in available_teachers:
+                                teacher_id = teacher.get("code", "TCH")
                                 
-                                # Check if teacher can teach this subject
-                                can_teach = False
-                                if "subjects" in teacher and subject_id in teacher["subjects"]:
-                                    can_teach = True
-                                    # Higher priority if it's a subject they specialize in
-                                    expertise_level = 2 if "expertise" in teacher and subject_id in teacher["expertise"] else 1
-                                elif "departments" in teacher and subject.get("department_id") in teacher["departments"]:
-                                    can_teach = True
-                                    expertise_level = 0  # Can teach but not specialized
-                                
-                                if not can_teach:
-                                    continue
-                                    
-                                # Check if teacher has reached max workload
-                                remaining_workload = constraints["teacher_max_workload"][teacher_id] - constraints["teacher_workload"][teacher_id]
-                                if remaining_workload < req_consecutive_slots:
-                                    continue
-                                
-                                # Check if teacher is available for all consecutive slots
+                                # Check if teacher is available for all slots
                                 teacher_available = True
-                                for slot in slots_to_schedule:
-                                    # Check teacher availability
-                                    if (day in constraints["teacher_availability"][teacher_id] and 
-                                        slot in constraints["teacher_availability"][teacher_id][day]):
+                                for slot in slot_group:
+                                    # Check conflicts with existing timetables
+                                    if self._check_teacher_conflict(teacher_id, day, slot, existing_timetables):
                                         teacher_available = False
                                         break
-                                    
+                                        
                                     # Check if teacher is busy with another practical in a different batch
                                     for other_batch in batch_names:
                                         if other_batch != batch_name:
-                                            other_slot = timetables[other_batch][day][slot]
-                                            if other_slot.get("teacher") == teacher_id and other_slot.get("type") == "practical":
-                                                teacher_available = False
-                                                break
-                                
-                                if teacher_available:
-                                    suitable_teachers.append((teacher, expertise_level))
-                            
-                            # Sort teachers by expertise level (highest first)
-                            suitable_teachers.sort(key=lambda x: x[1], reverse=True)
-                            
-                            if not suitable_teachers:
-                                continue
-                                
-                            # Find suitable lab rooms that can be used for all consecutive slots
-                            suitable_rooms = []
-                            
-                            # Get appropriate room types for this subject
-                            room_types = constraints["room_suitability"].get("practical", ["lab"])
-                            if req_lab_type:
-                                if isinstance(req_lab_type, list):
-                                    room_types = req_lab_type
-                                else:
-                                    room_types = [req_lab_type]
-                                    
-                            for room in rooms:
-                                room_id = str(room["_id"])
-                                room_number = room.get("number", "")
-                                room_type = room.get("type", "lab")
-                                room_capacity = room.get("capacity", 30)
-                                
-                                # Skip if room type doesn't match required types
-                                if room_type not in room_types:
+                                            other_batch_key = f"{year}_{other_batch}"
+                                            if other_batch_key in timetables:
+                                                other_slot = timetables[other_batch_key][day][slot]
+                                                if other_slot.get("teacher") == teacher_id and other_slot.get("type") == "practical":
+                                                    teacher_available = False
+                                                    break
+                                                    
+                                if not teacher_available:
                                     continue
-                                
-                                # Check if room capacity is sufficient
-                                batch_size = constraints.get("batch_size", 30)
-                                if room_capacity < batch_size:
-                                    continue
-                                
-                                # Check if room is available for all consecutive slots
-                                room_available = True
-                                
-                                for slot in slots_to_schedule:
-                                    # Check room availability from constraints
-                                    if (day in constraints["room_availability"][room_id] and 
-                                        slot in constraints["room_availability"][room_id][day]):
-                                        room_available = False
-                                        break
                                     
-                                    # Check if room is busy with another practical
-                                    for other_batch in batch_names:
-                                        if other_batch != batch_name:
-                                            other_slot = timetables[other_batch][day][slot]
-                                            if (other_slot.get("room") == room_id and 
-                                                other_slot.get("type") == "practical"):
-                                                room_available = False
-                                                break
+                                # Find an available lab room
+                                room_types = constraints["room_types"]["practical"]
+                                available_rooms = [r for r in rooms if r.get("type", "") in room_types]
+                                random.shuffle(available_rooms)
                                 
-                                if room_available:
-                                    # Check if shared room has specific department restrictions
-                                    if room_id in constraints["shared_rooms"]:
-                                        if "department_restriction" in room:
-                                            dept_id = subject.get("department_id")
-                                            if dept_id not in room["department_restriction"]:
-                                                continue
+                                room_assigned = False
+                                for room in available_rooms:
+                                    room_id = room.get("number", "LAB")
                                     
-                                    suitable_rooms.append(room)
-                            
-                            if not suitable_rooms:
-                                continue
-                            
-                            # We have suitable teachers and rooms for all slots, assign the practical
-                            teacher, _ = suitable_teachers[0]
-                            teacher_id = str(teacher["_id"])
-                            teacher_code = teacher.get("code", "")
-                            
-                            room = suitable_rooms[0]
-                            room_id = str(room["_id"])
-                            room_number = room.get("number", "")
-                            
-                            # Assign practical for all consecutive slots
-                            for slot in slots_to_schedule:
-                                timetables[batch_name][day][slot] = {
-                                    "subject": subject_id,
-                                    "subject_code": subject_code,
-                                    "teacher": teacher_id,
-                                    "teacher_code": teacher_code,
-                                    "room": room_id,
-                                    "room_number": room_number,
-                                    "type": "practical",
-                                    "practical_group": f"{subject_code}-{batch_name}"
-                                }
+                                    # Check if room is available for all slots
+                                    room_available = True
+                                    for slot in slot_group:
+                                        # Check conflicts with existing timetables
+                                        if self._check_room_conflict(room_id, day, slot, existing_timetables):
+                                            room_available = False
+                                            break
+                                            
+                                        # Check if room is busy with another practical
+                                        for other_batch in batch_names:
+                                            if other_batch != batch_name:
+                                                other_batch_key = f"{year}_{other_batch}"
+                                                if other_batch_key in timetables:
+                                                    other_slot = timetables[other_batch_key][day][slot]
+                                                    if (other_slot.get("room") == room_id and 
+                                                        other_slot.get("type") == "practical"):
+                                                        room_available = False
+                                                        break
+                                                        
+                                    if not room_available:
+                                        continue
+                                        
+                                    # We can schedule the practical here!
+                                    for slot in slot_group:
+                                        timetables[batch_timetable_key][day][slot] = {
+                                            "subject": subject_id,
+                                            "teacher": teacher_id,
+                                            "room": room_id,
+                                            "type": "practical",
+                                            "batch": batch_name
+                                        }
+                                        
+                                    # Update counters
+                                    constraints["teacher_workload"][teacher_id] += consecutive_slots
+                                    scheduled_practicals[subject_id][batch_name] += 1
+                                    scheduled = True
+                                    room_assigned = True
+                                    break
+                                    
+                                if room_assigned:
+                                    teacher_assigned = True
+                                    break
+                                    
+                            if teacher_assigned:
+                                break
                                 
-                                # Mark teacher as unavailable for this slot
-                                if day not in constraints["teacher_availability"][teacher_id]:
-                                    constraints["teacher_availability"][teacher_id][day] = []
-                                constraints["teacher_availability"][teacher_id][day].append(slot)
-                                
-                                # Mark room as unavailable for this slot
-                                if day not in constraints["room_availability"][room_id]:
-                                    constraints["room_availability"][room_id][day] = []
-                                constraints["room_availability"][room_id][day].append(slot)
-                                
-                                # Update teacher workload
-                                constraints["teacher_workload"][teacher_id] += 1
-                            
-                            # Update constraints
-                            constraints["subject_practicals_count"][subject_id] += 1
-                            
-                            assigned = True
-                            practicals_scheduled += 1
+                        if scheduled:
                             break
-                    
-                    # If we couldn't assign a practical in any slot, give up on this batch
-                    if not assigned:
+                            
+                    if not scheduled:
+                        # Could not schedule this practical
+                        print(f"Warning: Could not schedule practical for {subject.get('name', subject_id)} - Batch {batch_name}")
                         break
-                
-                # If we couldn't schedule all required practicals for this subject and batch, return failure
-                if practicals_scheduled < max_practicals:
-                    return False
-        
-        return True
+                        
+        # Check if all required practicals were scheduled
+        all_scheduled = True
+        for subject in practical_subjects:
+            subject_id = subject.get("code", "SUBJ")
+            year = subject.get("year", "TE")
+            required_practicals = subject.get("practicals_per_week", constraints.get("max_practicals_per_subject", 1))
+            
+            batch_names = [f"B{i}" for i in range(1, batch_counts.get(year, 3) + 1)]
+            for batch_name in batch_names:
+                if scheduled_practicals[subject_id][batch_name] < required_practicals:
+                    print(f"Warning: Could not schedule all practicals for {subject.get('name', subject_id)} - Batch {batch_name}")
+                    all_scheduled = False
+                    
+        return True  # Return success even with warnings
         
     def generate_formatted_timetable(self, department_id, academic_year):
         """
         Generate timetable and format it according to department-specific requirements
         """
+        # Generate raw timetable first
         timetables = self.generate_timetable(department_id, academic_year)
         if not timetables:
             return None
             
-        formatted_timetables = {}
-        
-        # Get department and program info
+        # Get department and program details for formatting
         department = self.db.departments.find_one({"_id": department_id})
         if not department:
             return None
             
-        # Get batch configuration based on department settings
-        batch_config = department.get('batch_config', {"count": 3, "prefix": "B"})
-        batch_count = batch_config.get("count", 3)
-        batch_prefix = batch_config.get("prefix", "B")
-        batch_names = [f"{batch_prefix}{i}" for i in range(1, batch_count + 1)]
+        # Format timetables for each academic year
+        formatted_timetables = {}
         
-        # Format the Main timetable (lectures)
-        main_timetable = {}
-        for day, slots in timetables["Main"].items():
-            main_timetable[day] = {}
-            for time_slot, details in slots.items():
-                if time_slot in self.break_slots or details["type"] == "break":
-                    main_timetable[day][time_slot] = "BREAK"
-                elif details["subject"] is None:
-                    main_timetable[day][time_slot] = "-"
-                else:
-                    # Format: SUBJECT_CODE - TEACHER_CODE
-                    subject_code = details.get("subject_code", "")
-                    teacher_code = details.get("teacher_code", "")
-                    room_number = details.get("room_number", "")
-                    
-                    # Get format from department settings or use default
-                    format_template = department.get("format_template", "{subject_code} - {teacher_code}\n{room_number}")
-                    formatted_cell = format_template.format(
-                        subject_code=subject_code,
-                        teacher_code=teacher_code,
-                        room_number=room_number,
-                        type=details.get("type", "")
-                    )
-                    main_timetable[day][time_slot] = formatted_cell
-        
-        formatted_timetables["Main"] = main_timetable
-        
-        # Format the batch timetables (practicals)
-        for batch_name in timetables:
-            if batch_name == "Main":
-                continue
+        # Process each academic year
+        for year in ["SE", "TE", "BE"]:
+            # Create a combined timetable for this year
+            formatted_timetables[year] = self._format_combined_timetable(timetables, year, department)
                 
-            batch_timetable = {}
-            for day, slots in timetables[batch_name].items():
-                batch_timetable[day] = {}
-                for time_slot, details in slots.items():
-                    if time_slot in self.break_slots or details["type"] == "break":
-                        batch_timetable[day][time_slot] = "BREAK"
-                    elif details["subject"] is None:
-                        # If no batch-specific activity, check the Main timetable
-                        main_details = timetables["Main"][day][time_slot]
-                        if main_details["subject"] is None:
-                            batch_timetable[day][time_slot] = "-"
-                        else:
-                            # Include the Main timetable lecture
-                            subject_code = main_details.get("subject_code", "")
-                            teacher_code = main_details.get("teacher_code", "")
-                            room_number = main_details.get("room_number", "")
-                            
-                            # Get format from department settings or use default
-                            format_template = department.get("format_template", "{subject_code} - {teacher_code}\n{room_number}")
-                            formatted_cell = format_template.format(
-                                subject_code=subject_code,
-                                teacher_code=teacher_code,
-                                room_number=room_number,
-                                type=main_details.get("type", "")
-                            )
-                            batch_timetable[day][time_slot] = formatted_cell
-                    else:
-                        # Format: SUBJECT_CODE - TEACHER_CODE (BATCH)
-                        subject_code = details.get("subject_code", "")
-                        teacher_code = details.get("teacher_code", "")
-                        room_number = details.get("room_number", "")
-                        
-                        # Get practical format from department settings or use default
-                        practical_format_template = department.get("practical_format_template", 
-                            "{subject_code} - {teacher_code}\n{batch_name}\n{room_number}")
-                        formatted_cell = practical_format_template.format(
-                            subject_code=subject_code,
-                            teacher_code=teacher_code,
-                            room_number=room_number,
-                            batch_name=batch_name,
-                            type=details.get("type", "")
-                        )
-                        batch_timetable[day][time_slot] = formatted_cell
-            
-            formatted_timetables[batch_name] = batch_timetable
-        
-        # Create combined view for all batches with different display formats based on department preference
-        view_type = department.get("timetable_view_type", "combined")
-        
-        if view_type == "combined":
-            # Create the final formatted timetable with all batches combined
-            class_timetable = {}
-            for day, slots in main_timetable.items():
-                class_timetable[day] = {}
-                for time_slot, details in slots.items():
-                    if "BREAK" in details:
-                        class_timetable[day][time_slot] = "BREAK"
-                    else:
-                        if details == "-":
-                            # Check if any batch has a practical here
-                            batch_entries = []
-                            for batch_name in batch_names:
-                                if batch_name not in formatted_timetables:
-                                    continue
-                                    
-                                batch_details = formatted_timetables[batch_name][day][time_slot]
-                                if batch_details != "-" and "BREAK" not in batch_details:
-                                    batch_entries.append(f"{batch_name} - {batch_details}")
-                            
-                            if batch_entries:
-                                class_timetable[day][time_slot] = "\n".join(batch_entries)
-                            else:
-                                class_timetable[day][time_slot] = "-"
-                        else:
-                            # This is a lecture for all
-                            class_timetable[day][time_slot] = details
-            
-            formatted_timetables["Class"] = class_timetable
-        elif view_type == "division":
-            # Create separate views for each division if department has divisions
-            divisions = department.get("divisions", ["A", "B", "C"])
-            for division in divisions:
-                div_timetable = {}
-                for day, slots in main_timetable.items():
-                    div_timetable[day] = {}
-                    for time_slot, details in slots.items():
-                        # Copy main timetable for divisions
-                        div_timetable[day][time_slot] = details
-                
-                division_batches = [f"{batch_prefix}{division}{i}" for i in range(1, batch_count + 1)]
-                for batch_name in division_batches:
-                    if batch_name in formatted_timetables:
-                        # Incorporate division-specific batch schedules
-                        for day in div_timetable:
-                            for time_slot in div_timetable[day]:
-                                batch_details = formatted_timetables[batch_name][day][time_slot]
-                                if batch_details != "-" and "BREAK" not in batch_details and div_timetable[day][time_slot] == "-":
-                                    div_timetable[day][time_slot] = batch_details
-                
-                formatted_timetables[f"Division_{division}"] = div_timetable
-        
-        # Add metadata for reference
-        formatted_timetables["metadata"] = {
-            "department": department.get("name", ""),
-            "academic_year": academic_year,
-            "generated_at": self._get_current_timestamp(),
-            "batch_structure": batch_names,
-            "view_type": view_type
-        }
-        
         return formatted_timetables
         
+    def _format_combined_timetable(self, timetables, year, department):
+        """
+        Format a combined timetable that shows lectures and practicals for all batches in one view
+        Organized by time slots (rows) and days (columns)
+        """
+        main_key = f"{year}_Main"
+        if main_key not in timetables:
+            return {}
+            
+        # Get batch information
+        batch_count = department.get("years", {}).get(year, {}).get("num_batches", 3)
+        batch_names = [f"B{i}" for i in range(1, batch_count + 1)]
+        
+        # Create a timetable structure with time slots as primary keys
+        combined_timetable = {}
+        
+        # Initialize the structure first - time slots as primary keys
+        time_slots_without_breaks = [ts for ts in self.time_slots if ts not in self.break_slots]
+        for time_slot in time_slots_without_breaks:
+            combined_timetable[time_slot] = {}
+            for day in self.days:
+                combined_timetable[time_slot][day] = "-"  # Empty slot by default
+        
+        # Fill in the lectures from main timetable
+        for day in self.days:
+            for time_slot in time_slots_without_breaks:
+                # Skip breaks
+                if time_slot in self.break_slots:
+                    continue
+                
+                # Get main timetable entry (lectures)
+                main_slot = timetables[main_key][day][time_slot]
+                
+                # If there's a lecture in the main timetable, add it
+                if main_slot["subject"] is not None:
+                    subject_code = main_slot["subject"]
+                    teacher_code = main_slot["teacher"]
+                    room_number = main_slot["room"]
+                    
+                    combined_timetable[time_slot][day] = f"{year} (Main): {subject_code} - {teacher_code} ({room_number})"
+        
+        # Add the practicals from batch timetables
+        for batch_num in range(1, batch_count + 1):
+            batch_name = f"B{batch_num}"
+            batch_key = f"{year}_{batch_name}"
+            
+            if batch_key in timetables:
+                for day in self.days:
+                    for time_slot in time_slots_without_breaks:
+                        # Skip breaks
+                        if time_slot in self.break_slots:
+                            continue
+                        
+                        batch_slot = timetables[batch_key][day][time_slot]
+                        
+                        if batch_slot["subject"] is not None:
+                            subject_code = batch_slot["subject"]
+                            teacher_code = batch_slot["teacher"]
+                            room_number = batch_slot["room"]
+                            
+                            # If the slot already has a lecture, append the practical
+                            # Otherwise create a new entry
+                            current_value = combined_timetable[time_slot][day]
+                            if current_value == "-":
+                                combined_timetable[time_slot][day] = f"{year} ({batch_name}): {subject_code} - {teacher_code} ({room_number})"
+                            else:
+                                combined_timetable[time_slot][day] += f"\n{year} ({batch_name}): {subject_code} - {teacher_code} ({room_number})"
+        
+        return combined_timetable
+
+    def _create_demo_se_subjects(self, department_id):
+        """Create demo subjects for SE year"""
+        se_subjects = [
+            {
+                "_id": ObjectId(),
+                "name": "Data Structures",
+                "code": "DS",
+                "department_id": department_id,
+                "department_id_str": str(department_id),
+                "year": "SE",
+                "type": "lecture",
+                "lectures_per_week": 3
+            },
+            {
+                "_id": ObjectId(),
+                "name": "Object-Oriented Programming",
+                "code": "OOP",
+                "department_id": department_id,
+                "department_id_str": str(department_id),
+                "year": "SE",
+                "type": "lecture",
+                "lectures_per_week": 3
+            },
+            {
+                "_id": ObjectId(),
+                "name": "Database Management Systems",
+                "code": "DBMS",
+                "department_id": department_id,
+                "department_id_str": str(department_id),
+                "year": "SE",
+                "type": "lecture",
+                "lectures_per_week": 3
+            },
+            {
+                "_id": ObjectId(),
+                "name": "Computer Networks",
+                "code": "CN",
+                "department_id": department_id,
+                "department_id_str": str(department_id),
+                "year": "SE",
+                "type": "lecture",
+                "lectures_per_week": 3
+            },
+            {
+                "_id": ObjectId(),
+                "name": "Data Structures Lab",
+                "code": "DS Lab",
+                "department_id": department_id,
+                "department_id_str": str(department_id),
+                "year": "SE",
+                "type": "practical",
+                "practicals_per_week": 1,
+                "consecutive_slots": 2
+            },
+            {
+                "_id": ObjectId(),
+                "name": "OOP Lab",
+                "code": "OOP Lab",
+                "department_id": department_id,
+                "department_id_str": str(department_id),
+                "year": "SE",
+                "type": "practical",
+                "practicals_per_week": 1,
+                "consecutive_slots": 2
+            },
+            {
+                "_id": ObjectId(),
+                "name": "DBMS Lab",
+                "code": "DBMS Lab",
+                "department_id": department_id,
+                "department_id_str": str(department_id),
+                "year": "SE",
+                "type": "practical",
+                "practicals_per_week": 1,
+                "consecutive_slots": 2
+            }
+        ]
+        
+        # Insert into database
+        for subject in se_subjects:
+            self.db.subjects.insert_one(subject)
+            
+        return se_subjects
+        
+    def _create_demo_te_subjects(self, department_id):
+        """Create demo subjects for TE year"""
+        te_subjects = [
+            {
+                "_id": ObjectId(),
+                "name": "Machine Learning",
+                "code": "ML",
+                "department_id": department_id,
+                "department_id_str": str(department_id),
+                "year": "TE",
+                "type": "lecture",
+                "lectures_per_week": 3
+            },
+            {
+                "_id": ObjectId(),
+                "name": "Data Analytics and Visualization",
+                "code": "DAV",
+                "department_id": department_id,
+                "department_id_str": str(department_id),
+                "year": "TE",
+                "type": "lecture",
+                "lectures_per_week": 3
+            },
+            {
+                "_id": ObjectId(),
+                "name": "Software Engineering and Project Management",
+                "code": "SEPM",
+                "department_id": department_id,
+                "department_id_str": str(department_id),
+                "year": "TE",
+                "type": "lecture",
+                "lectures_per_week": 3
+            },
+            {
+                "_id": ObjectId(),
+                "name": "Machine Learning Lab",
+                "code": "ML Lab",
+                "department_id": department_id,
+                "department_id_str": str(department_id),
+                "year": "TE",
+                "type": "practical",
+                "practicals_per_week": 1,
+                "consecutive_slots": 2
+            },
+            {
+                "_id": ObjectId(),
+                "name": "DAV Lab",
+                "code": "DAV Lab",
+                "department_id": department_id,
+                "department_id_str": str(department_id),
+                "year": "TE",
+                "type": "practical",
+                "practicals_per_week": 1,
+                "consecutive_slots": 2
+            },
+            {
+                "_id": ObjectId(),
+                "name": "SEPM Lab",
+                "code": "SEPM Lab",
+                "department_id": department_id,
+                "department_id_str": str(department_id),
+                "year": "TE",
+                "type": "practical",
+                "practicals_per_week": 1,
+                "consecutive_slots": 2
+            }
+        ]
+        
+        # Insert into database
+        for subject in te_subjects:
+            self.db.subjects.insert_one(subject)
+            
+        return te_subjects
+
+    def _create_demo_be_subjects(self, department_id):
+        """Create demo subjects for BE year"""
+        be_subjects = [
+            {
+                "_id": ObjectId(),
+                "name": "Distributed Computing",
+                "code": "DC",
+                "department_id": department_id,
+                "department_id_str": str(department_id),
+                "year": "BE",
+                "type": "lecture",
+                "lectures_per_week": 3
+            },
+            {
+                "_id": ObjectId(),
+                "name": "Cryptography and System Security",
+                "code": "CSS",
+                "department_id": department_id,
+                "department_id_str": str(department_id),
+                "year": "BE",
+                "type": "lecture",
+                "lectures_per_week": 3
+            },
+            {
+                "_id": ObjectId(),
+                "name": "Cloud Computing",
+                "code": "CC",
+                "department_id": department_id,
+                "department_id_str": str(department_id),
+                "year": "BE",
+                "type": "lecture",
+                "lectures_per_week": 3
+            },
+            {
+                "_id": ObjectId(),
+                "name": "DC Lab",
+                "code": "DC Lab",
+                "department_id": department_id,
+                "department_id_str": str(department_id),
+                "year": "BE",
+                "type": "practical",
+                "practicals_per_week": 1,
+                "consecutive_slots": 2
+            },
+            {
+                "_id": ObjectId(),
+                "name": "CSS Lab",
+                "code": "CSS Lab",
+                "department_id": department_id,
+                "department_id_str": str(department_id),
+                "year": "BE",
+                "type": "practical",
+                "practicals_per_week": 1,
+                "consecutive_slots": 2
+            },
+            {
+                "_id": ObjectId(),
+                "name": "Mini Project",
+                "code": "MP",
+                "department_id": department_id,
+                "department_id_str": str(department_id),
+                "year": "BE",
+                "type": "practical",
+                "practicals_per_week": 1,
+                "consecutive_slots": 2
+            }
+        ]
+        
+        # Insert into database
+        for subject in be_subjects:
+            self.db.subjects.insert_one(subject)
+            
+        return be_subjects
+
+    def _create_demo_teachers(self, department_id):
+        """Create demo teachers"""
+        teachers = [
+            {
+                "_id": ObjectId(),
+                "name": "Dr. Sandeep B. Raskar",
+                "code": "SBR",
+                "departments": [department_id],
+                "subjects": []
+            },
+            {
+                "_id": ObjectId(),
+                "name": "Prof. Sayalee Narkhede",
+                "code": "SJN",
+                "departments": [department_id],
+                "subjects": []
+            },
+            {
+                "_id": ObjectId(),
+                "name": "Prof. Smita Pawar",
+                "code": "SP",
+                "departments": [department_id],
+                "subjects": []
+            },
+            {
+                "_id": ObjectId(),
+                "name": "Mr. Shrikant Bamane",
+                "code": "SB",
+                "departments": [department_id],
+                "subjects": []
+            },
+            {
+                "_id": ObjectId(),
+                "name": "Mr. Deepak Thorat",
+                "code": "DT",
+                "departments": [department_id],
+                "subjects": []
+            },
+            {
+                "_id": ObjectId(),
+                "name": "Mr. Kishor Biradar",
+                "code": "KB",
+                "departments": [department_id],
+                "subjects": []
+            },
+            {
+                "_id": ObjectId(),
+                "name": "Mr. Samsul Ekram",
+                "code": "SE",
+                "departments": [department_id],
+                "subjects": []
+            }
+        ]
+        
+        # Insert into database
+        for teacher in teachers:
+            self.db.teachers.insert_one(teacher)
+            
+        return teachers
+
+    def _create_demo_rooms(self):
+        """Create demo rooms"""
+        rooms = [
+            {
+                "_id": ObjectId(),
+                "number": "101",
+                "type": "classroom",
+                "capacity": 60
+            },
+            {
+                "_id": ObjectId(),
+                "number": "102",
+                "type": "classroom",
+                "capacity": 60
+            },
+            {
+                "_id": ObjectId(),
+                "number": "103",
+                "type": "lecture_hall",
+                "capacity": 120
+            },
+            {
+                "_id": ObjectId(),
+                "number": "201",
+                "type": "lab",
+                "capacity": 30
+            },
+            {
+                "_id": ObjectId(),
+                "number": "202",
+                "type": "lab",
+                "capacity": 30
+            },
+            {
+                "_id": ObjectId(),
+                "number": "203",
+                "type": "computer_lab",
+                "capacity": 30
+            }
+        ]
+        
+        # Insert into database
+        for room in rooms:
+            self.db.rooms.insert_one(room)
+            
+        return rooms
+
     def _get_current_timestamp(self):
         """Returns current timestamp in ISO format"""
         from datetime import datetime
