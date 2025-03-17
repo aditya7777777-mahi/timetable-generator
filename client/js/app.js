@@ -23,27 +23,34 @@ const appCore = (() => {
      * Load all initial data from APIs
      * @returns {Promise} Promise that resolves when all data is loaded
      */
-    const loadInitialData = () => {
+    const loadInitialData = async () => {
         window.ui.showLoadingState();
-        return Promise.all([
-            window.api.fetchDepartments(),
-            window.api.fetchTeachers(),
-            window.api.fetchSubjects(),
-            window.api.fetchRooms(),
-            window.api.fetchTimetables()
-        ]).then(([departments, teachers, subjects, rooms, timetables]) => {
+        try {
+            const [departments, teachers, subjects, rooms, timetables] = await Promise.all([
+                window.api.fetchDepartments(),
+                window.api.fetchTeachers(),
+                window.api.fetchSubjects(),
+                window.api.fetchRooms(),
+                window.api.fetchTimetables()
+            ]);
+
             // Store data in state
             state.departments = departments;
             state.teachers = teachers;
             state.subjects = subjects;
             state.rooms = rooms;
             state.timetables = timetables;
-            
+
             // Update UI with initial data
             window.ui.updateDepartmentDropdowns(departments);
-        }).finally(() => {
+            return { departments, teachers, subjects, rooms, timetables };
+        } catch (error) {
+            console.error('Error loading initial data:', error);
+            window.ui.showToast('Error loading initial data. Please refresh the page.', 'error');
+            throw error;
+        } finally {
             window.ui.hideLoadingState();
-        });
+        }
     };
 
     // Public API
@@ -53,28 +60,10 @@ const appCore = (() => {
 
         /**
          * Initialize the application
+         * @returns {Promise} Promise that resolves when initialization is complete
          */
-        init() {
-            // Initialize API module
-            if (window.api) {
-                window.api.init();
-            }
-            
-            // Initialize UI module
-            if (window.ui) {
-                window.ui.init();
-            }
-            
-            // Initialize forms module
-            if (window.forms) {
-                window.forms.init();
-            }
-            
-            // Load initial data
-            loadInitialData();
-            
-            // Default to departments section
-            window.ui.showSection('departments');
+        async init() {
+            return loadInitialData();
         },
 
         /**
@@ -119,61 +108,51 @@ const appCore = (() => {
          * Refresh departments data
          * @returns {Promise} Promise that resolves when departments are refreshed
          */
-        refreshDepartments() {
-            return window.api.fetchDepartments()
-                .then(departments => {
-                    this.state.departments = departments;
-                    window.ui.updateDepartmentDropdowns(departments);
-                    return departments;
-                });
+        async refreshDepartments() {
+            const departments = await window.api.fetchDepartments();
+            this.state.departments = departments;
+            window.ui.updateDepartmentDropdowns(departments);
+            return departments;
         },
-        
+
         /**
          * Refresh teachers data
          * @returns {Promise} Promise that resolves when teachers are refreshed
          */
-        refreshTeachers() {
-            return window.api.fetchTeachers()
-                .then(teachers => {
-                    this.state.teachers = teachers;
-                    return teachers;
-                });
+        async refreshTeachers() {
+            const teachers = await window.api.fetchTeachers();
+            this.state.teachers = teachers;
+            return teachers;
         },
-        
+
         /**
          * Refresh subjects data
          * @returns {Promise} Promise that resolves when subjects are refreshed
          */
-        refreshSubjects() {
-            return window.api.fetchSubjects()
-                .then(subjects => {
-                    this.state.subjects = subjects;
-                    return subjects;
-                });
+        async refreshSubjects() {
+            const subjects = await window.api.fetchSubjects();
+            this.state.subjects = subjects;
+            return subjects;
         },
-        
+
         /**
          * Refresh rooms data
          * @returns {Promise} Promise that resolves when rooms are refreshed
          */
-        refreshRooms() {
-            return window.api.fetchRooms()
-                .then(rooms => {
-                    this.state.rooms = rooms;
-                    return rooms;
-                });
+        async refreshRooms() {
+            const rooms = await window.api.fetchRooms();
+            this.state.rooms = rooms;
+            return rooms;
         },
-        
+
         /**
          * Refresh timetables data
          * @returns {Promise} Promise that resolves when timetables are refreshed
          */
-        refreshTimetables() {
-            return window.api.fetchTimetables()
-                .then(timetables => {
-                    this.state.timetables = timetables;
-                    return timetables;
-                });
+        async refreshTimetables() {
+            const timetables = await window.api.fetchTimetables();
+            this.state.timetables = timetables;
+            return timetables;
         }
     };
 })();

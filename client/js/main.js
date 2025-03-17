@@ -4,7 +4,7 @@
  */
 
 // Wait for DOM to be fully loaded before initializing the application
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     console.log('Initializing timetable generator application...');
     
     // Initialize all modules in the correct order
@@ -21,6 +21,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     if (window.appCore) {
-        window.appCore.init();
+        // Initialize core app and wait for data to load
+        await window.appCore.init();
+        
+        // Show the default section
+        window.ui.showSection('departments');
     }
 });

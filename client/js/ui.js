@@ -4,116 +4,403 @@
  */
 
 const ui = (() => {
-    /**
-     * Show a section and hide others
-     * @param {string} sectionId - ID of section to show (without '-section' suffix)
-     */
     const showSection = (sectionId) => {
-        // Get all sections
-        const sections = document.querySelectorAll('.section');
-        
-        // Hide all sections
-        sections.forEach(section => {
-            section.classList.add('hidden');
-        });
-        
-        // Show the selected section
-        document.getElementById(`${sectionId}-section`).classList.remove('hidden');
-        
-        // Update active navigation button
+        // Update navigation styling
         const navButtons = document.querySelectorAll('.nav-btn');
         navButtons.forEach(btn => {
             btn.classList.remove('bg-blue-500', 'text-white');
             btn.classList.add('bg-gray-200', 'hover:bg-gray-300');
+            
+            if (btn.id === `nav-${sectionId}`) {
+                btn.classList.remove('bg-gray-200', 'hover:bg-gray-300');
+                btn.classList.add('bg-blue-500', 'text-white');
+            }
         });
         
-        document.getElementById(`nav-${sectionId}`).classList.remove('bg-gray-200', 'hover:bg-gray-300');
-        document.getElementById(`nav-${sectionId}`).classList.add('bg-blue-500', 'text-white');
-    };
-
-    /**
-     * Initialize navigation
-     */
-    const initNavigation = () => {
-        const navButtons = document.querySelectorAll('.nav-btn');
-        
-        navButtons.forEach(button => {
-            const sectionId = button.id.replace('nav-', '');
-            button.addEventListener('click', () => showSection(sectionId));
+        // Show/hide sections
+        document.querySelectorAll('.section').forEach(section => {
+            section.classList.add('hidden');
         });
+        document.getElementById(`${sectionId}-section`)?.classList.remove('hidden');
+        
+        // Load section data
+        switch(sectionId) {
+            case 'departments':
+                displayDepartments();
+                break;
+            case 'teachers':
+                displayTeachers();
+                break;
+            case 'subjects':
+                displaySubjects();
+                break;
+            case 'rooms':
+                displayRooms();
+                break;
+            case 'view':
+                loadTimetables();
+                break;
+        }
     };
 
-    /**
-     * Initialize year tabs
-     */
-    const initYearTabs = () => {
-        document.getElementById('se-year-tab')?.addEventListener('click', () => window.timetableRenderer.activateYearTab('SE'));
-        document.getElementById('te-year-tab')?.addEventListener('click', () => window.timetableRenderer.activateYearTab('TE'));
-        document.getElementById('be-year-tab')?.addEventListener('click', () => window.timetableRenderer.activateYearTab('BE'));
-    };
+    const displayDepartments = () => {
+        const departmentsList = document.getElementById('departments-list');
+        if (!departmentsList) return;
 
-    /**
-     * Display a toast notification
-     * @param {string} message - Message to display
-     * @param {string} type - Notification type (success, error)
-     */
-    const showToast = (message, type = 'success') => {
-        const toastContainer = document.getElementById('toast-container') || createToastContainer();
-        const toast = document.createElement('div');
-        
-        toast.className = `p-4 mb-3 rounded shadow-md transition-opacity duration-500 ease-in-out ${
-            type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-        }`;
-        toast.textContent = message;
-        
-        toastContainer.appendChild(toast);
-        
-        // Remove after 3 seconds
-        setTimeout(() => {
-            toast.classList.add('opacity-0');
-            setTimeout(() => {
-                toastContainer.removeChild(toast);
-            }, 500);
-        }, 3000);
-    };
+        departmentsList.innerHTML = '';
+        const departments = window.appCore?.state?.departments || [];
 
-    /**
-     * Create a toast container if it doesn't exist
-     * @returns {HTMLElement} - Toast container element
-     */
-    const createToastContainer = () => {
-        const container = document.createElement('div');
-        container.id = 'toast-container';
-        container.className = 'fixed top-4 right-4 z-50';
-        document.body.appendChild(container);
-        return container;
-    };
+        if (departments.length === 0) {
+            departmentsList.innerHTML = '<div class="text-gray-500 italic">No departments added yet</div>';
+            return;
+        }
 
-    /**
-     * Show loading state with spinner
-     */
-    const showLoadingState = () => {
-        let loadingOverlay = document.getElementById('loading-overlay');
-        
-        if (!loadingOverlay) {
-            loadingOverlay = document.createElement('div');
-            loadingOverlay.id = 'loading-overlay';
-            loadingOverlay.className = 'fixed inset-0 bg-gray-700 bg-opacity-50 flex items-center justify-center z-50';
-            loadingOverlay.innerHTML = `
-                <div class="bg-white p-4 rounded-lg shadow-lg text-center">
-                    <div class="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500 mb-2"></div>
-                    <p>Loading...</p>
+        departments.forEach(dept => {
+            const departmentItem = document.createElement('div');
+            departmentItem.className = 'flex justify-between items-center border-b py-2';
+            departmentItem.innerHTML = `
+                <div>
+                    <p class="font-semibold">${dept.name}</p>
+                    <p class="text-sm text-gray-600">Academic Year: ${dept.academic_year}</p>
+                    <p class="text-sm text-gray-600">Branches: ${dept.num_branches || 'N/A'}</p>
                 </div>
+                <button class="delete-department text-red-500 hover:text-red-700" data-id="${dept._id}">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M9 2a1 0 00-.894.553L7.382 4H4a1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 0 012 0v6a1 0 11-2 0V8zm5-1a1 0 00-1 1v6a1 0 102 0V8a1 0 00-1-1z" clip-rule="evenodd" />
+                    </svg>
+                </button>
             `;
-            document.body.appendChild(loadingOverlay);
-        } else {
-            loadingOverlay.classList.remove('hidden');
+
+            // Add delete handler
+            const deleteButton = departmentItem.querySelector('.delete-department');
+            deleteButton.addEventListener('click', async () => {
+                if (confirm('Are you sure you want to delete this department?')) {
+                    try {
+                        const response = await fetch(`/api/departments/${dept._id}`, {
+                            method: 'DELETE'
+                        });
+                        
+                        if (!response.ok) {
+                            throw new Error('Failed to delete department');
+                        }
+                        
+                        showToast('Department deleted successfully');
+                        await window.appCore.refreshDepartments();
+                        displayDepartments();
+                    } catch (error) {
+                        console.error('Error deleting department:', error);
+                        showToast('Error deleting department', 'error');
+                    }
+                }
+            });
+
+            departmentsList.appendChild(departmentItem);
+        });
+    };
+
+    const displayTeachers = () => {
+        const teachersList = document.getElementById('teachers-list');
+        if (!teachersList) return;
+
+        teachersList.innerHTML = '';
+        const teachers = window.appCore?.state?.teachers || [];
+
+        if (teachers.length === 0) {
+            teachersList.innerHTML = '<div class="text-gray-500 italic">No teachers added yet</div>';
+            return;
+        }
+
+        teachers.forEach(teacher => {
+            const teacherItem = document.createElement('div');
+            teacherItem.className = 'flex justify-between items-center border-b py-2';
+            teacherItem.innerHTML = `
+                <div>
+                    <p class="font-semibold">${teacher.code} - ${teacher.name}</p>
+                    <p class="text-sm text-gray-600">Specialization: ${teacher.specialization || 'N/A'}</p>
+                </div>
+                <button class="delete-teacher text-red-500 hover:text-red-700" data-id="${teacher._id}">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M9 2a1 0 00-.894.553L7.382 4H4a1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 0 012 0v6a1 0 11-2 0V8zm5-1a1 0 00-1 1v6a1 0 102 0V8a1 0 00-1-1z" clip-rule="evenodd" />
+                    </svg>
+                </button>
+            `;
+
+            // Add delete handler
+            const deleteButton = teacherItem.querySelector('.delete-teacher');
+            deleteButton.addEventListener('click', async () => {
+                if (confirm('Are you sure you want to delete this teacher?')) {
+                    try {
+                        const response = await fetch(`/api/teachers/${teacher._id}`, {
+                            method: 'DELETE'
+                        });
+                        
+                        if (!response.ok) {
+                            throw new Error('Failed to delete teacher');
+                        }
+                        
+                        showToast('Teacher deleted successfully');
+                        await window.appCore.refreshTeachers();
+                        displayTeachers();
+                    } catch (error) {
+                        console.error('Error deleting teacher:', error);
+                        showToast('Error deleting teacher', 'error');
+                    }
+                }
+            });
+
+            teachersList.appendChild(teacherItem);
+        });
+    };
+
+    const displaySubjects = () => {
+        const subjectsList = document.getElementById('subjects-list');
+        if (!subjectsList) return;
+
+        subjectsList.innerHTML = '';
+        const subjects = window.appCore?.state?.subjects || [];
+
+        if (subjects.length === 0) {
+            subjectsList.innerHTML = '<div class="text-gray-500 italic">No subjects added yet</div>';
+            return;
+        }
+
+        subjects.forEach(subject => {
+            const subjectItem = document.createElement('div');
+            subjectItem.className = 'flex justify-between items-center border-b py-2';
+            
+            // Find department name
+            let departmentName = 'Unknown Department';
+            if (window.appCore?.state?.departments) {
+                const department = window.appCore.state.departments.find(
+                    dept => dept._id === subject.department_id
+                );
+                if (department) {
+                    departmentName = department.name;
+                }
+            }
+
+            subjectItem.innerHTML = `
+                <div>
+                    <p class="font-semibold">${subject.code} - ${subject.name}</p>
+                    <p class="text-sm text-gray-600">Department: ${departmentName}</p>
+                    <p class="text-sm text-gray-600">Year: ${subject.year}, Type: ${subject.type?.charAt(0).toUpperCase() + subject.type?.slice(1) || 'N/A'}</p>
+                </div>
+                <button class="delete-subject text-red-500 hover:text-red-700" data-id="${subject._id}">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M9 2a1 0 00-.894.553L7.382 4H4a1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 0 012 0v6a1 0 11-2 0V8zm5-1a1 0 00-1 1v6a1 0 102 0V8a1 0 00-1-1z" clip-rule="evenodd" />
+                    </svg>
+                </button>
+            `;
+
+            // Add delete handler
+            const deleteButton = subjectItem.querySelector('.delete-subject');
+            deleteButton.addEventListener('click', async () => {
+                if (confirm('Are you sure you want to delete this subject?')) {
+                    try {
+                        const response = await fetch(`/api/subjects/${subject._id}`, {
+                            method: 'DELETE'
+                        });
+                        
+                        if (!response.ok) {
+                            throw new Error('Failed to delete subject');
+                        }
+                        
+                        showToast('Subject deleted successfully');
+                        await window.appCore.refreshSubjects();
+                        displaySubjects();
+                    } catch (error) {
+                        console.error('Error deleting subject:', error);
+                        showToast('Error deleting subject', 'error');
+                    }
+                }
+            });
+
+            subjectsList.appendChild(subjectItem);
+        });
+    };
+
+    const displayRooms = () => {
+        const roomsList = document.getElementById('rooms-list');
+        if (!roomsList) return;
+
+        roomsList.innerHTML = '';
+        const rooms = window.appCore?.state?.rooms || [];
+
+        if (rooms.length === 0) {
+            roomsList.innerHTML = '<div class="text-gray-500 italic">No rooms added yet</div>';
+            return;
+        }
+
+        rooms.forEach(room => {
+            const roomItem = document.createElement('div');
+            roomItem.className = 'flex justify-between items-center border-b py-2';
+            roomItem.innerHTML = `
+                <div>
+                    <p class="font-semibold">${room.number}</p>
+                    <p class="text-sm text-gray-600">Capacity: ${room.capacity || 'N/A'}</p>
+                    <p class="text-sm text-gray-600">Type: ${room.type || 'classroom'}</p>
+                </div>
+                <button class="delete-room text-red-500 hover:text-red-700" data-id="${room._id}">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M9 2a1 0 00-.894.553L7.382 4H4a1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 0 012 0v6a1 0 11-2 0V8zm5-1a1 0 00-1 1v6a1 0 102 0V8a1 0 00-1-1z" clip-rule="evenodd" />
+                    </svg>
+                </button>
+            `;
+
+            // Add delete handler
+            const deleteButton = roomItem.querySelector('.delete-room');
+            deleteButton.addEventListener('click', async () => {
+                if (confirm('Are you sure you want to delete this room?')) {
+                    try {
+                        const response = await fetch(`/api/rooms/${room._id}`, {
+                            method: 'DELETE'
+                        });
+                        
+                        if (!response.ok) {
+                            throw new Error('Failed to delete room');
+                        }
+                        
+                        showToast('Room deleted successfully');
+                        await window.appCore.refreshRooms();
+                        displayRooms();
+                    } catch (error) {
+                        console.error('Error deleting room:', error);
+                        showToast('Error deleting room', 'error');
+                    }
+                }
+            });
+
+            roomsList.appendChild(roomItem);
+        });
+    };
+
+    const loadTimetables = () => {
+        const timetableSelect = document.getElementById('timetable-select');
+        if (!timetableSelect) return;
+
+        const timetables = window.appCore?.state?.timetables || [];
+        
+        // Clear existing options except the first one
+        while (timetableSelect.options.length > 1) {
+            timetableSelect.remove(1);
+        }
+        
+        // Add timetables to select
+        timetables.forEach(timetable => {
+            const option = document.createElement('option');
+            option.value = timetable._id;
+            
+            // Get the department name if available
+            let deptName = 'Unknown Department';
+            if (window.appCore?.state?.departments) {
+                const dept = window.appCore.state.departments.find(d => d._id === timetable.department_id);
+                if (dept) {
+                    deptName = dept.name;
+                }
+            }
+            
+            option.textContent = `${deptName} - ${timetable.academic_year}`;
+            timetableSelect.appendChild(option);
+        });
+    };
+
+    /**
+     * Load and display a timetable by ID
+     * @param {string} timetableId - ID of the timetable to load
+     */
+    const loadTimetableById = async (timetableId) => {
+        if (!timetableId) return;
+
+        try {
+            showLoadingState();
+            const timetableData = await window.api.fetchTimetableById(timetableId);
+            
+            if (!timetableData) {
+                showToast('Failed to load timetable data', 'error');
+                return;
+            }
+
+            // Find the department for this timetable
+            let department = null;
+            if (window.appCore?.state?.departments && timetableData.department_id) {
+                department = window.appCore.state.departments.find(
+                    dept => dept._id === timetableData.department_id
+                );
+            }
+
+            // Update app state with current timetable
+            if (window.appCore) {
+                window.appCore.updateTimetable(timetableData);
+            }
+
+            // Render the timetable
+            window.timetableRenderer.displayFormattedTimetable(timetableData, department);
+        } catch (error) {
+            console.error('Error loading timetable:', error);
+            showToast('Error loading timetable', 'error');
+        } finally {
+            hideLoadingState();
         }
     };
 
     /**
-     * Hide loading state
+     * Activate a specific year tab in the timetable view
+     * @param {string} year - Year to activate (SE, TE, BE)
      */
+    const activateYearTab = (year) => {
+        if (window.timetableRenderer) {
+            window.timetableRenderer.activateYearTab(year);
+        }
+    };
+
+    const updateDepartmentDropdowns = (departments) => {
+        const dropdowns = [
+            'subject-department',
+            'timetable-department',
+            'import-department'
+        ].map(id => document.getElementById(id)).filter(Boolean);
+
+        dropdowns.forEach(dropdown => {
+            // Save current selection
+            const currentValue = dropdown.value;
+            
+            // Clear existing options except the first placeholder
+            while (dropdown.options.length > 1) {
+                dropdown.remove(1);
+            }
+            
+            // Add departments
+            departments.forEach(dept => {
+                const option = document.createElement('option');
+                option.value = dept._id;
+                option.textContent = dept.name;
+                dropdown.appendChild(option);
+            });
+            
+            // Restore selection if possible
+            if (currentValue) {
+                dropdown.value = currentValue;
+            }
+        });
+    };
+
+    const showToast = (message, type = 'success') => {
+        const toast = document.createElement('div');
+        toast.className = `fixed bottom-4 right-4 p-4 rounded shadow-lg ${
+            type === 'success' ? 'bg-green-500' : 'bg-red-500'
+        } text-white z-50`;
+        toast.textContent = message;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 3000);
+    };
+
+    const showLoadingState = () => {
+        const loadingOverlay = document.getElementById('loading-overlay');
+        if (loadingOverlay) {
+            loadingOverlay.classList.remove('hidden');
+        }
+    };
+
     const hideLoadingState = () => {
         const loadingOverlay = document.getElementById('loading-overlay');
         if (loadingOverlay) {
@@ -121,294 +408,70 @@ const ui = (() => {
         }
     };
 
-    /**
-     * Update department dropdown options in all select elements
-     * @param {Array} departments - List of departments
-     */
-    const updateDepartmentDropdowns = (departments) => {
-        // Update in subject form
-        const subjectDeptSelect = document.getElementById('subject-department');
-        if (subjectDeptSelect) {
-            // Save current selection
-            const currentValue = subjectDeptSelect.value;
-            
-            // Clear existing options except the first placeholder
-            while (subjectDeptSelect.options.length > 1) {
-                subjectDeptSelect.remove(1);
-            }
-            
-            // Add departments
-            departments.forEach(dept => {
-                const option = document.createElement('option');
-                option.value = dept._id;
-                option.textContent = dept.name;
-                subjectDeptSelect.appendChild(option);
-            });
-            
-            // Restore selection if possible
-            if (currentValue) {
-                subjectDeptSelect.value = currentValue;
-            }
-        }
-        
-        // Update in generate form
-        const generateDeptSelect = document.getElementById('timetable-department');
-        if (generateDeptSelect) {
-            // Save current selection
-            const currentValue = generateDeptSelect.value;
-            
-            // Clear existing options except the first placeholder
-            while (generateDeptSelect.options.length > 1) {
-                generateDeptSelect.remove(1);
-            }
-            
-            // Add departments
-            departments.forEach(dept => {
-                const option = document.createElement('option');
-                option.value = dept._id;
-                option.textContent = dept.name;
-                generateDeptSelect.appendChild(option);
-            });
-            
-            // Restore selection if possible
-            if (currentValue) {
-                generateDeptSelect.value = currentValue;
-            }
-        }
-        
-        // Update in import form
-        const importDeptSelect = document.getElementById('import-department');
-        if (importDeptSelect) {
-            // Save current selection
-            const currentValue = importDeptSelect.value;
-            
-            // Clear existing options except the first placeholder
-            while (importDeptSelect.options.length > 1) {
-                importDeptSelect.remove(1);
-            }
-            
-            // Add departments
-            departments.forEach(dept => {
-                const option = document.createElement('option');
-                option.value = dept._id;
-                option.textContent = dept.name;
-                importDeptSelect.appendChild(option);
-            });
-            
-            // Restore selection if possible
-            if (currentValue) {
-                importDeptSelect.value = currentValue;
-            }
-        }
-    };
-
-    /**
-     * Initialize import section
-     */
-    const initImportSection = () => {
-        // Set up file input
-        const fileInput = document.getElementById('import-file');
-        const fileLabel = document.getElementById('import-file-label');
-
-        if (fileInput && fileLabel) {
-            fileInput.addEventListener('change', function() {
-                if (this.files.length > 0) {
-                    fileLabel.textContent = this.files[0].name;
-                } else {
-                    fileLabel.textContent = 'Choose a timetable file';
-                }
-            });
-        }
-
-        // Set up import button
-        const importButton = document.getElementById('import-timetable-btn');
-        if (importButton) {
-            importButton.addEventListener('click', importTimetable);
-        }
-    };
-
-    /**
-     * Import a timetable from file
-     */
-    const importTimetable = () => {
-        const departmentId = document.getElementById('import-department').value;
-        const fileInput = document.getElementById('import-file');
-        
-        if (!departmentId) {
-            showToast('Please select a department', 'error');
-            return;
-        }
-        
-        if (!fileInput.files || fileInput.files.length === 0) {
-            showToast('Please select a file to import', 'error');
-            return;
-        }
-        
-        const file = fileInput.files[0];
-        const reader = new FileReader();
-        
-        reader.onload = async function(e) {
-            try {
-                const timetableData = JSON.parse(e.target.result);
-                
-                // Add department_id to the timetable data
-                timetableData.department_id = departmentId;
-                
-                // Import the timetable
-                const response = await window.api.importTimetable(timetableData);
-                
-                // Show success message
-                showImportSuccess('Timetable imported successfully!');
-                
-                // Reset form
-                document.getElementById('import-department').value = '';
-                document.getElementById('import-file').value = '';
-                document.getElementById('import-file-label').textContent = 'Choose a timetable file';
-                
-                // Refresh timetables list
-                window.api.fetchTimetables().then(timetables => {
-                    window.appCore.state.timetables = timetables;
-                });
-            } catch (error) {
-                showImportError('Error importing timetable: ' + (error.message || 'Invalid file format'));
-            }
-        };
-        
-        reader.onerror = function() {
-            showImportError('Error reading file');
-        };
-        
-        reader.readAsText(file);
-    };
-
-    /**
-     * Show import success message
-     * @param {string} message - Success message
-     */
-    const showImportSuccess = (message) => {
-        const successMsg = document.getElementById('import-success');
-        successMsg.textContent = message;
-        successMsg.classList.remove('hidden');
-        
-        // Hide after 3 seconds
-        setTimeout(() => {
-            successMsg.classList.add('hidden');
-        }, 3000);
-    };
-
-    /**
-     * Show import error message
-     * @param {string} message - Error message
-     */
-    const showImportError = (message) => {
-        const errorMsg = document.getElementById('import-error');
-        errorMsg.textContent = message;
-        errorMsg.classList.remove('hidden');
-        
-        // Hide after 3 seconds
-        setTimeout(() => {
-            errorMsg.classList.add('hidden');
-        }, 3000);
-    };
-
-    /**
-     * Initialize view section
-     */
-    const initViewSection = () => {
-        // Load timetables
-        loadTimetables();
-        
-        // Event listener for timetable selection
-        document.getElementById('timetable-select')?.addEventListener('change', function() {
-            if (this.value) {
-                window.api.getFormattedTimetable(this.value)
-                    .then(data => {
-                        // Use timetableRenderer module to display the formatted timetable
-                        window.timetableRenderer.displayFormattedTimetable(data.timetable, data.department);
-                        // Update the app state
-                        if (window.appCore) {
-                            window.appCore.updateTimetable(data.timetable);
-                        }
-                    })
-                    .catch(error => {
-                        console.error('Error fetching timetable:', error);
-                        showToast('Error loading timetable', 'error');
-                    });
-            } else {
-                // Hide timetable container
-                document.getElementById('timetable-view').innerHTML = '';
-                document.getElementById('timetable-header').classList.add('hidden');
-                document.getElementById('faculty-subject-details').classList.add('hidden');
-            }
-        });
-    };
-    
-    /**
-     * Load timetables in the view section
-     */
-    const loadTimetables = () => {
-        window.api.fetchTimetables()
-            .then(timetables => {
-                const timetableSelect = document.getElementById('timetable-select');
-                if (!timetableSelect) return;
-                
-                // Clear existing options except the first one
-                while (timetableSelect.options.length > 1) {
-                    timetableSelect.remove(1);
-                }
-                
-                // Add timetables to select
-                timetables.forEach(timetable => {
-                    const option = document.createElement('option');
-                    option.value = timetable._id;
-                    
-                    // Get the department name if available
-                    let deptName = 'Unknown Department';
-                    if (window.appCore && window.appCore.state.departments.length) {
-                        const dept = window.appCore.state.departments.find(d => d._id === timetable.department_id);
-                        if (dept) {
-                            deptName = dept.name;
-                        }
-                    }
-                    
-                    option.textContent = `${deptName} - ${timetable.academic_year}`;
-                    timetableSelect.appendChild(option);
-                });
-            })
-            .catch(error => {
-                console.error('Error loading timetables:', error);
-                showToast('Error loading timetables', 'error');
-            });
-    };
-
-    /**
-     * Format date from MongoDB ObjectId
-     * @param {string} objectId - MongoDB ObjectId
-     * @returns {string} - Formatted date string
-     */
-    const formatDate = (objectId) => {
-        // Extract timestamp from MongoDB ObjectId
-        const timestamp = parseInt(objectId.substring(0, 8), 16) * 1000;
-        const date = new Date(timestamp);
-        
-        // Format date: MM/DD/YYYY
-        return `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}`;
-    };
-
     return {
         init() {
-            initNavigation();
-            initYearTabs();
-            initViewSection();
-            initImportSection();
+            // Initialize all necessary UI components
+            showSection('departments');
+            
+            // Add event listeners to navigation buttons
+            document.querySelectorAll('.nav-btn').forEach(button => {
+                button.addEventListener('click', () => {
+                    // Extract the section ID from the button ID (e.g., 'nav-departments' -> 'departments')
+                    const sectionId = button.id.replace('nav-', '');
+                    showSection(sectionId);
+                });
+            });
+            
+            // Setup year tab functionality in timetable view
+            const yearTabs = document.querySelectorAll('.year-tab');
+            yearTabs.forEach(tab => {
+                tab.addEventListener('click', () => {
+                    // Remove active class from all tabs
+                    yearTabs.forEach(t => t.classList.remove('active'));
+                    // Add active class to clicked tab
+                    tab.classList.add('active');
+                    
+                    // Handle year tab switching logic
+                    const year = tab.getAttribute('data-year');
+                    const timetableId = document.getElementById('timetable-select').value;
+                    if (timetableId && year) {
+                        // Call timetable rendering with selected year
+                        if (window.timetableRenderer) {
+                            window.timetableRenderer.activateYearTab(year);
+                        }
+                    }
+                });
+            });
+
+            // Add event listener for timetable selection
+            const timetableSelect = document.getElementById('timetable-select');
+            if (timetableSelect) {
+                timetableSelect.addEventListener('change', () => {
+                    const selectedId = timetableSelect.value;
+                    if (selectedId) {
+                        loadTimetableById(selectedId);
+                    } else {
+                        // Clear the timetable view if no timetable is selected
+                        document.getElementById('timetable-view').innerHTML = '';
+                        document.getElementById('timetable-header').classList.add('hidden');
+                        document.getElementById('year-tabs-container').classList.add('hidden');
+                        document.getElementById('faculty-subject-details').classList.add('hidden');
+                    }
+                });
+            }
         },
         showSection,
         showToast,
         showLoadingState,
         hideLoadingState,
         updateDepartmentDropdowns,
-        importTimetable,
-        formatDate
+        displayDepartments,
+        displayTeachers,
+        displaySubjects,
+        displayRooms,
+        loadTimetables,
+        activateYearTab,
+        loadTimetableById
     };
 })();
 
