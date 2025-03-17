@@ -5,7 +5,7 @@ class Subject(BaseModel):
     collection_name = 'subjects'
 
     @classmethod
-    def create_with_validation(cls, subject_data, department_collection):
+    def create_with_validation(cls, subject_data, department_collection, teacher_collection):
         # Validate department_id
         if 'department_id' not in subject_data or not subject_data['department_id']:
             raise ValueError("Department ID is required")
@@ -22,6 +22,18 @@ class Subject(BaseModel):
         # Validate subject type
         if 'type' not in subject_data or subject_data['type'] not in ['lecture', 'practical']:
             raise ValueError("Valid type (lecture/practical) is required")
+        
+        # Validate teacher_id if provided
+        if 'teacher_id' in subject_data and subject_data['teacher_id']:
+            teacher = teacher_collection.find_one({"_id": ObjectId(subject_data['teacher_id'])})
+            if not teacher:
+                raise ValueError("Teacher not found")
+            
+            # Store teacher details
+            subject_data['teacher_id'] = ObjectId(subject_data['teacher_id'])
+            subject_data['teacher_id_str'] = str(subject_data['teacher_id'])
+            subject_data['teacher_name'] = teacher.get('name', '')
+            subject_data['teacher_code'] = teacher.get('code', '')
             
         # Store both ObjectId and string versions
         subject_data['department_id'] = ObjectId(subject_data['department_id'])
@@ -53,4 +65,16 @@ class Subject(BaseModel):
         if year:
             query["year"] = year
             
+        return cls.find_all(query)
+        
+    @classmethod
+    def find_by_teacher(cls, teacher_id):
+        # Query subjects by teacher
+        query = {
+            "$or": [
+                {"teacher_id": ObjectId(teacher_id)},
+                {"teacher_id_str": str(teacher_id)}
+            ]
+        }
+        
         return cls.find_all(query)

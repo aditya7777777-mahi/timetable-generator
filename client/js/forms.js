@@ -267,6 +267,7 @@ const forms = (() => {
         const departmentId = document.getElementById('subject-department').value;
         const year = document.getElementById('subject-year').value;
         const type = document.getElementById('subject-type').value;
+        const teacherId = document.getElementById('subject-teacher').value;
         
         if (!subjectCode) {
             window.ui.showToast('Please enter subject code', 'error');
@@ -300,6 +301,11 @@ const forms = (() => {
             type: type
         };
         
+        // Add teacher ID if selected
+        if (teacherId) {
+            subjectData.teacher_id = teacherId;
+        }
+        
         // Send request to create subject
         window.api.createSubject(subjectData)
             .then(newSubject => {
@@ -320,6 +326,16 @@ const forms = (() => {
                     }
                 }
                 
+                // Get teacher info if assigned
+                let teacherInfo = '';
+                if (newSubject.teacher_id || newSubject.teacher_name) {
+                    const teacherCode = newSubject.teacher_code || '';
+                    const teacherName = newSubject.teacher_name || '';
+                    teacherInfo = `
+                        <p class="text-sm text-gray-600">Teacher: ${teacherCode ? teacherCode + ' - ' : ''}${teacherName}</p>
+                    `;
+                }
+                
                 // Create subject item
                 const subjectItem = document.createElement('div');
                 subjectItem.className = 'flex justify-between items-center border-b py-2';
@@ -328,6 +344,7 @@ const forms = (() => {
                         <p class="font-semibold">${newSubject.code} - ${newSubject.name}</p>
                         <p class="text-sm text-gray-600">Department: ${departmentName}</p>
                         <p class="text-sm text-gray-600">Year: ${newSubject.year}, Type: ${newSubject.type.charAt(0).toUpperCase() + newSubject.type.slice(1)}</p>
+                        ${teacherInfo}
                     </div>
                     <button class="delete-subject text-red-500 hover:text-red-700" data-id="${newSubject._id}">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">

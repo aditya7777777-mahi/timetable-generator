@@ -10,7 +10,8 @@ def handle_subjects():
     try:
         if request.method == 'POST':
             subject_data = request.json
-            subject_id = Subject.create_with_validation(subject_data, Subject.collection.database.departments)
+            db = Subject.collection.database
+            subject_id = Subject.create_with_validation(subject_data, db.departments, db.teachers)
             
             # Return created subject with proper fields
             created_subject = Subject.find_by_id(subject_id)
@@ -25,6 +26,8 @@ def handle_subjects():
         else:
             subjects = Subject.find_all()
             return jsonify(Subject.to_json_friendly(subjects))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     except PyMongoError as e:
         print(f"Database error in subjects route: {str(e)}")
         return jsonify({"error": "Database error occurred"}), 500
@@ -42,6 +45,19 @@ def handle_subject(subject_id):
             return jsonify(Subject.to_json_friendly(subject))
             
         elif request.method == 'PUT':
+            # Handle teacher updates for subjects
+            if 'teacher_id' in request.json and request.json['teacher_id']:
+                db = Subject.collection.database
+                teacher = db.teachers.find_one({"_id": ObjectId(request.json['teacher_id'])})
+                if not teacher:
+                    return jsonify({"error": "Teacher not found"}), 404
+                
+                # Add teacher details
+                request.json['teacher_id'] = ObjectId(request.json['teacher_id'])
+                request.json['teacher_id_str'] = str(request.json['teacher_id'])
+                request.json['teacher_name'] = teacher.get('name', '')
+                request.json['teacher_code'] = teacher.get('code', '')
+            
             if Subject.update_by_id(subject_id, request.json):
                 return jsonify({"message": "Subject updated successfully"})
             return jsonify({"error": "Subject not found"}), 404
@@ -78,5 +94,15 @@ def get_subjects_by_department(department_id):
         
         return jsonify(subjects)
         
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+        
+@subjects.route('/api/subjects/by-teacher/<teacher_id>', methods=['GET'])
+def get_subjects_by_teacher(teacher_id):
+    """Get all subjects assigned to a specific teacher"""
+    try:
+        subjects = Subject.find_by_teacher(teacher_id)
+        subjects = Subject.to_json_friendly(subjects)
+        return jsonify(subjects)
     except Exception as e:
         return jsonify({"error": str(e)}), 500

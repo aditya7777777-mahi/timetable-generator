@@ -122,6 +122,8 @@ const appCore = (() => {
         async refreshTeachers() {
             const teachers = await window.api.fetchTeachers();
             this.state.teachers = teachers;
+            // Update teacher dropdown in subjects form
+            window.ui.updateTeacherDropdown();
             return teachers;
         },
 
@@ -132,6 +134,8 @@ const appCore = (() => {
         async refreshSubjects() {
             const subjects = await window.api.fetchSubjects();
             this.state.subjects = subjects;
+            // Update UI with new subject data
+            window.ui.displaySubjects();
             return subjects;
         },
 
@@ -162,5 +166,8 @@ window.appCore = appCore;
 
 // Initialize the app when the DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
-    appCore.init();
+    appCore.init().then(() => {
+        // Initialize teacher dropdown after loading initial data
+        window.ui.updateTeacherDropdown();
+    });
 });

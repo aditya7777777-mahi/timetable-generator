@@ -33,6 +33,7 @@ const ui = (() => {
                 break;
             case 'subjects':
                 displaySubjects();
+                updateTeacherDropdown(); // Update teacher dropdown when viewing subjects section
                 break;
             case 'rooms':
                 displayRooms();
@@ -40,6 +41,33 @@ const ui = (() => {
             case 'view':
                 loadTimetables();
                 break;
+        }
+    };
+
+    const updateTeacherDropdown = () => {
+        const teacherDropdown = document.getElementById('subject-teacher');
+        if (!teacherDropdown) return;
+        
+        // Save current selection
+        const currentValue = teacherDropdown.value;
+        
+        // Clear existing options except the first placeholder
+        while (teacherDropdown.options.length > 1) {
+            teacherDropdown.remove(1);
+        }
+        
+        // Add teachers to dropdown
+        const teachers = window.appCore?.state?.teachers || [];
+        teachers.forEach(teacher => {
+            const option = document.createElement('option');
+            option.value = teacher._id;
+            option.textContent = `${teacher.code} - ${teacher.name}`;
+            teacherDropdown.appendChild(option);
+        });
+        
+        // Restore selection if possible
+        if (currentValue) {
+            teacherDropdown.value = currentValue;
         }
     };
 
@@ -179,11 +207,22 @@ const ui = (() => {
                 }
             }
 
+            // Get teacher info if assigned
+            let teacherInfo = '';
+            if (subject.teacher_id || subject.teacher_name) {
+                const teacherCode = subject.teacher_code || '';
+                const teacherName = subject.teacher_name || '';
+                teacherInfo = `
+                    <p class="text-sm text-gray-600">Teacher: ${teacherCode ? teacherCode + ' - ' : ''}${teacherName}</p>
+                `;
+            }
+
             subjectItem.innerHTML = `
                 <div>
                     <p class="font-semibold">${subject.code} - ${subject.name}</p>
                     <p class="text-sm text-gray-600">Department: ${departmentName}</p>
                     <p class="text-sm text-gray-600">Year: ${subject.year}, Type: ${subject.type?.charAt(0).toUpperCase() + subject.type?.slice(1) || 'N/A'}</p>
+                    ${teacherInfo}
                 </div>
                 <button class="delete-subject text-red-500 hover:text-red-700" data-id="${subject._id}">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -465,6 +504,7 @@ const ui = (() => {
         showLoadingState,
         hideLoadingState,
         updateDepartmentDropdowns,
+        updateTeacherDropdown,
         displayDepartments,
         displayTeachers,
         displaySubjects,

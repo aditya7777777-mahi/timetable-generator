@@ -136,10 +136,14 @@ const timetableRenderer = (() => {
                     if (cellData.type === 'break') {
                         cellContent = 'BREAK';
                     } else if (cellData.subject) {
-                        cellContent = cellData.subject;
-                        if (cellData.teacher) cellContent += ` - ${cellData.teacher}`;
+                        cellContent = cellData.subject_name || cellData.subject;
+                        if (cellData.teacher_name) {
+                            cellContent += `\n${cellData.teacher_code || ''} - ${cellData.teacher_name}`;
+                        } else if (cellData.teacher) {
+                            cellContent += `\n${cellData.teacher}`;
+                        }
                         if (cellData.room) cellContent += `\n${cellData.room}`;
-                        if (cellData.batch) cellContent += `\n${cellData.batch}`;
+                        if (cellData.batch) cellContent += `\nBatch ${cellData.batch}`;
                     }
                     
                     row.innerHTML += `<td class="${cellClass}">${cellContent}</td>`;
@@ -269,26 +273,34 @@ const timetableRenderer = (() => {
             Object.values(timetable.timetable).forEach(yearData => {
                 Object.values(yearData).forEach(dayData => {
                     Object.values(dayData).forEach(slot => {
-                        if (slot.teacher && slot.subject && slot.type !== 'break') {
-                            teachers.set(slot.teacher, true);
-                            subjects.set(slot.subject, true);
+                        if (slot.type !== 'break') {
+                            if (slot.teacher_code && slot.teacher_name) {
+                                teachers.set(slot.teacher_code, slot.teacher_name);
+                            } else if (slot.teacher) {
+                                teachers.set(slot.teacher, slot.teacher);
+                            }
+                            
+                            if (slot.subject_name && slot.subject) {
+                                subjects.set(slot.subject, slot.subject_name);
+                            } else if (slot.subject) {
+                                subjects.set(slot.subject, slot.subject);
+                            }
                         }
                     });
                 });
             });
             
             // Add teachers to table
-            Array.from(teachers.keys()).sort().forEach(teacher => {
+            Array.from(teachers.entries()).sort((a, b) => a[0].localeCompare(b[0])).forEach(([code, name]) => {
                 const row = document.createElement('tr');
                 
                 const codeCell = document.createElement('td');
                 codeCell.className = 'border p-2';
-                codeCell.textContent = teacher;
+                codeCell.textContent = code;
                 
                 const nameCell = document.createElement('td');
                 nameCell.className = 'border p-2';
-                // We don't have full names in the data, so just showing code
-                nameCell.textContent = teacher;
+                nameCell.textContent = name;
                 
                 row.appendChild(codeCell);
                 row.appendChild(nameCell);
@@ -296,17 +308,16 @@ const timetableRenderer = (() => {
             });
             
             // Add subjects to table
-            Array.from(subjects.keys()).sort().forEach(subject => {
+            Array.from(subjects.entries()).sort((a, b) => a[0].localeCompare(b[0])).forEach(([code, name]) => {
                 const row = document.createElement('tr');
                 
                 const codeCell = document.createElement('td');
                 codeCell.className = 'border p-2';
-                codeCell.textContent = subject;
+                codeCell.textContent = code;
                 
                 const nameCell = document.createElement('td');
                 nameCell.className = 'border p-2';
-                // We don't have full names in the data, so just showing code
-                nameCell.textContent = subject;
+                nameCell.textContent = name;
                 
                 row.appendChild(codeCell);
                 row.appendChild(nameCell);
@@ -369,8 +380,11 @@ const timetableRenderer = (() => {
                                 html += `<div class="text-center font-medium">BREAK</div>`;
                             } else {
                                 html += `
-                                    <div class="font-semibold">${cellData.subject}</div>
-                                    ${cellData.teacher ? `<div class="text-sm text-gray-600">${cellData.teacher}</div>` : ''}
+                                    <div class="font-semibold">${cellData.subject_name || cellData.subject}</div>
+                                    ${cellData.teacher_name ? 
+                                        `<div class="text-sm text-gray-600">${cellData.teacher_code || ''} - ${cellData.teacher_name}</div>` :
+                                        cellData.teacher ? `<div class="text-sm text-gray-600">${cellData.teacher}</div>` : ''
+                                    }
                                     ${cellData.room ? `<div class="text-sm text-gray-600">Room: ${cellData.room}</div>` : ''}
                                     ${cellData.batch ? `<div class="text-xs text-blue-600">Batch: ${cellData.batch}</div>` : ''}
                                     <div class="text-xs text-gray-500">${cellData.type || 'lecture'}</div>
